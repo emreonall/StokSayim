@@ -127,29 +127,67 @@ public class SayimPlaniService : ISayimPlaniService
         {
             using var wb = new XLWorkbook(dosya);
             var ws = wb.Worksheet(1);
-            var satirlar = ws.RangeUsed()?.RowsUsed().Skip(1).ToList() ?? [];
+            // İlk satır başlık, ikinci satır açıklama — ikisini de atla
+            var satirlar = ws.RangeUsed()?.RowsUsed().Skip(2).ToList() ?? [];
 
             foreach (var satir in satirlar)
             {
                 islenenSatir++;
+                var satirNo = satir.RowNumber();
                 try
                 {
+                    var malzemeKodu = satir.Cell(1).GetString().Trim();
+                    var malzemeAdi = satir.Cell(2).GetString().Trim();
                     var depoKodu = satir.Cell(3).GetString().Trim();
+                    var miktarStr = satir.Cell(4).GetString().Trim();
+                    var birim = satir.Cell(5).GetString().Trim();
+
+                    // Zorunlu alan kontrolleri
+                    if (string.IsNullOrEmpty(malzemeKodu))
+                    {
+                        hataliSatir++;
+                        hatalar.Add($"Satır {satirNo}: Malzeme kodu boş olamaz.");
+                        continue;
+                    }
+
                     if (!izinliDepolar.Contains(depoKodu))
                     {
                         hataliSatir++;
-                        hatalar.Add($"Satır {islenenSatir + 1}: '{depoKodu}' depo kodu plan kapsamında değil.");
+                        hatalar.Add($"Satır {satirNo}: '{depoKodu}' depo kodu plan kapsamında değil. (Malzeme: {malzemeKodu})");
                         continue;
+                    }
+
+                    if (string.IsNullOrEmpty(birim))
+                    {
+                        hataliSatir++;
+                        hatalar.Add($"Satır {satirNo}: Birim boş olamaz. (Malzeme: {malzemeKodu})");
+                        continue;
+                    }
+
+                    // Miktar parse
+                    decimal miktar;
+                    if (!decimal.TryParse(miktarStr.Replace(",", "."),
+                            System.Globalization.NumberStyles.Any,
+                            System.Globalization.CultureInfo.InvariantCulture, out miktar))
+                    {
+                        // ClosedXML'den direkt numeric dene
+                        try { miktar = satir.Cell(4).GetValue<decimal>(); }
+                        catch
+                        {
+                            hataliSatir++;
+                            hatalar.Add($"Satır {satirNo}: Miktar sayısal değil ('{miktarStr}'). (Malzeme: {malzemeKodu})");
+                            continue;
+                        }
                     }
 
                     yeniKayitlar.Add(new ErpStok
                     {
                         SayimPlaniId = id,
-                        MalzemeKodu = satir.Cell(1).GetString().Trim(),
-                        MalzemeAdi = satir.Cell(2).GetString().Trim(),
+                        MalzemeKodu = malzemeKodu,
+                        MalzemeAdi = malzemeAdi,
                         DepoKodu = depoKodu,
-                        Miktar = satir.Cell(4).GetValue<decimal>(),
-                        Birim = satir.Cell(5).GetString().Trim(),
+                        Miktar = miktar,
+                        Birim = birim,
                         LotNo = satir.Cell(6).GetString().Trim().NullIfEmpty(),
                         SeriNo = satir.Cell(7).GetString().Trim().NullIfEmpty(),
                         ImportTarihi = DateTime.UtcNow,
@@ -160,7 +198,7 @@ public class SayimPlaniService : ISayimPlaniService
                 catch (Exception ex)
                 {
                     hataliSatir++;
-                    hatalar.Add($"Satır {islenenSatir + 1}: {ex.Message}");
+                    hatalar.Add($"Satır {satirNo}: Beklenmeyen hata — {ex.Message}");
                 }
             }
         }
@@ -186,7 +224,4 @@ public class SayimPlaniService : ISayimPlaniService
     }
 }
 
-internal static class StringExtensions
-{
-    public static string? NullIfEmpty(this string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
-}
+

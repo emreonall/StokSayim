@@ -15,7 +15,7 @@ public class UnitOfWork : IUnitOfWork
     public IEkipRepository Ekipler { get; }
     public IEkipGrubuRepository EkipGruplari { get; }
     public ISayimOturumuRepository SayimOturumlari { get; }
-    public ISayimTuruRepository SayimTurleri { get; }
+    public ISayimTuruRepository SayimTurlari { get; }
     public ISayimKaydiRepository SayimKayitlari { get; }
     public IErpStokRepository ErpStoklar { get; }
     public ITurSonucuRepository TurSonuclari { get; }
@@ -29,7 +29,7 @@ public class UnitOfWork : IUnitOfWork
         Ekipler = new EkipRepository(context);
         EkipGruplari = new EkipGrubuRepository(context);
         SayimOturumlari = new SayimOturumuRepository(context);
-        SayimTurleri = new SayimTuruRepository(context);
+        SayimTurlari = new SayimTuruRepository(context);
         SayimKayitlari = new SayimKaydiRepository(context);
         ErpStoklar = new ErpStokRepository(context);
         TurSonuclari = new TurSonucuRepository(context);
@@ -37,7 +37,7 @@ public class UnitOfWork : IUnitOfWork
     }
 
     public async Task<int> SaveChangesAsync(CancellationToken ct = default)
-        => await _context.SaveChangesAsync(ct);
+        => await _context.SaveChangesAsync(CancellationToken.None);
 
     public async Task BeginTransactionAsync(CancellationToken ct = default)
         => _transaction = await _context.Database.BeginTransactionAsync(ct);

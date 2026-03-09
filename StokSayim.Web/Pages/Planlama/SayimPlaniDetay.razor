@@ -120,7 +120,23 @@ else
                                         @if (_importSonuc != null)
                                         {
                                             <div class="ss-alert @(_importSonuc.Basarili ? "ss-alert-success" : "ss-alert-warn")" style="margin-top:8px">
-                                                ✅ @_importSonuc.EklenenSatir satır eklendi, @_importSonuc.HataliSatir hatalı
+                                                <div>✅ @_importSonuc.EklenenSatir satır eklendi, @_importSonuc.HataliSatir hatalı</div>
+                                                @if (_importSonuc.Hatalar != null && _importSonuc.Hatalar.Any())
+                                                {
+                                                    <details style="margin-top:8px">
+                                                        <summary style="cursor:pointer; font-weight:600; font-size:13px">
+                                                            ⚠️ @_importSonuc.HataliSatir hatalı satır — detayları gör
+                                                        </summary>
+                                                        <div style="margin-top:8px; max-height:200px; overflow-y:auto; background:#fff3cd; border-radius:4px; padding:8px">
+                                                            @foreach (var hata in _importSonuc.Hatalar)
+                                                            {
+                                                                <div style="font-size:12px; padding:3px 0; border-bottom:1px solid #ffe08a; color:#856404">
+                                                                    @hata
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    </details>
+                                                }
                                             </div>
                                         }
                                     </AuthorizeView>
@@ -146,12 +162,9 @@ else
                                 </SfButton>
                             }
                             <AuthorizeView Roles="Admin,SayimSorumlusu">
-                                @if (_plan.Durum == SayimPlaniDurum.Taslak)
-                                {
-                                    <SfButton CssClass="e-primary" @onclick="BolgeEkleAc">
-                                        + Bölge Ekle
-                                    </SfButton>
-                                }
+                                <SfButton CssClass="e-primary" @onclick="BolgeEkleAc">
+                                    + Bölge Ekle
+                                </SfButton>
                             </AuthorizeView>
                         </div>
 
@@ -173,28 +186,47 @@ else
                                         "Onaylandi" or "ManuelKarar" => "onaylandi",
                                         _ => "beklemede"
                                     };
-                                    <div class="ss-bolge-card @renk"
-                                         @onclick="@(() => Nav.NavigateTo($"/bolgeler/{bolge.Id}"))">
-                                        <div class="ss-bolge-title">@bolge.BolgeAdi</div>
-                                        <div class="ss-bolge-kod">@bolge.BolgeKodu</div>
-                                        <div class="ss-bolge-meta">
-                                            @if (bolge.EkipGrubuVarMi)
-                                            {
-                                                <span class="ss-badge ss-badge-success">✓ Ekip atandı</span>
-                                            }
-                                            else
-                                            {
-                                                <span class="ss-badge ss-badge-warn">⚠ Ekip yok</span>
-                                            }
-                                            @if (bolge.SayimOturumuVarMi)
-                                            {
-                                                <span class="ss-badge ss-badge-accent">@bolge.OturumDurum</span>
-                                            }
-                                            else
-                                            {
-                                                <span class="ss-badge ss-badge-muted">Başlamadı</span>
-                                            }
+                                    <div class="ss-bolge-card @renk">
+                                        <!-- Kart içeriği — navigasyon sadece başlığa -->
+                                        <div class="ss-bolge-card-body"
+                                             @onclick="@(() => Nav.NavigateTo($"/bolgeler/{bolge.Id}"))">
+                                            <div class="ss-bolge-title">@bolge.BolgeAdi</div>
+                                            <div class="ss-bolge-kod">@bolge.BolgeKodu</div>
+                                            <div class="ss-bolge-meta">
+                                                @if (bolge.EkipGrubuVarMi)
+                                                {
+                                                    <span class="ss-badge ss-badge-success">✓ Ekip atandı</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="ss-badge ss-badge-warn">⚠ Ekip yok</span>
+                                                }
+                                                @if (bolge.SayimOturumuVarMi)
+                                                {
+                                                    <span class="ss-badge ss-badge-accent">@bolge.OturumDurum</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="ss-badge ss-badge-muted">Başlamadı</span>
+                                                }
+                                            </div>
                                         </div>
+                                        <!-- Aksiyon butonları -->
+                                        <AuthorizeView Roles="Admin,SayimSorumlusu">
+                                            <div class="ss-bolge-actions" @onclick:stopPropagation="true" style="padding-top:10px;">
+                                                <SfButton CssClass="e-outline e-small"
+                                                          @onclick="@(() => BolgeDuzenleAc(bolge))">
+                                                    ✏️
+                                                </SfButton>
+                                                @if (!bolge.SayimOturumuVarMi)
+                                                {
+                                                    <SfButton CssClass="e-outline e-small e-danger"
+                                                              @onclick="@(() => BolgeSilOnayla(bolge))">
+                                                        🗑️
+                                                    </SfButton>
+                                                }
+                                            </div>
+                                        </AuthorizeView>
                                     </div>
                                 }
                             </div>
@@ -230,6 +262,46 @@ else
     </DialogTemplates>
 </SfDialog>
 
+<!-- Bölge Düzenle Dialog -->
+<SfDialog @bind-Visible="_bolgeDuzenleDialogAcik" Header="Bölge Düzenle" Width="420px" ShowCloseIcon="true">
+    <DialogTemplates>
+        <Content>
+            <div class="ss-form-group">
+                <label>Bölge Kodu *</label>
+                <SfTextBox @bind-Value="_duzenleKodu" Placeholder="Örn: ZK01" />
+            </div>
+            <div class="ss-form-group">
+                <label>Bölge Adı *</label>
+                <SfTextBox @bind-Value="_duzenleAdi" Placeholder="Örn: Zemin Kat Depo" />
+            </div>
+            <div class="ss-form-group">
+                <label>Açıklama</label>
+                <SfTextBox @bind-Value="_duzenleAciklama" Multiline="true" />
+            </div>
+        </Content>
+        <FooterTemplate>
+            <SfButton CssClass="e-outline" @onclick="@(() => _bolgeDuzenleDialogAcik = false)">İptal</SfButton>
+            <SfButton CssClass="e-primary" @onclick="BolgeGuncelle">Kaydet</SfButton>
+        </FooterTemplate>
+    </DialogTemplates>
+</SfDialog>
+
+<!-- Silme Onay Dialog -->
+<SfDialog @bind-Visible="_silOnayDialogAcik" Header="Bölge Sil" Width="380px" ShowCloseIcon="true">
+    <DialogTemplates>
+        <Content>
+            <p>
+                <strong>@_silinecekBolge?.BolgeAdi</strong> bölgesini silmek istediğinize emin misiniz?
+                Bu işlem geri alınamaz.
+            </p>
+        </Content>
+        <FooterTemplate>
+            <SfButton CssClass="e-outline" @onclick="@(() => _silOnayDialogAcik = false)">İptal</SfButton>
+            <SfButton CssClass="e-danger" @onclick="BolgeSil">Evet, Sil</SfButton>
+        </FooterTemplate>
+    </DialogTemplates>
+</SfDialog>
+
 @code {
     [Parameter] public int Id { get; set; }
 
@@ -244,11 +316,22 @@ else
     private bool _importYukleniyor = false;
     private ErpImportSonucDto? _importSonuc;
 
-    // Bölge dialog
+    // Bölge ekle dialog
     private bool _bolgeDialogAcik = false;
     private string _yeniBolgeKodu = "";
     private string _yeniBolgeAdi = "";
     private string? _yeniBolgeAciklama;
+
+    // Bölge düzenle dialog
+    private bool _bolgeDuzenleDialogAcik = false;
+    private BolgeDto? _duzenlenenBolge;
+    private string _duzenleKodu = "";
+    private string _duzenleAdi = "";
+    private string? _duzenleAciklama;
+
+    // Bölge sil dialog
+    private bool _silOnayDialogAcik = false;
+    private BolgeDto? _silinecekBolge;
 
     protected override async Task OnInitializedAsync()
     {
@@ -306,6 +389,7 @@ else
         finally { _importYukleniyor = false; }
     }
 
+    // --- Bölge Ekle ---
     private void BolgeEkleAc()
     {
         _yeniBolgeKodu = "";
@@ -326,6 +410,55 @@ else
             await BolgeService.CreateAsync(dto);
             _bolgeDialogAcik = false;
             _mesaj = "Bölge eklendi."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+    }
+
+    // --- Bölge Düzenle ---
+    private void BolgeDuzenleAc(BolgeDto bolge)
+    {
+        _duzenlenenBolge = bolge;
+        _duzenleKodu = bolge.BolgeKodu;
+        _duzenleAdi = bolge.BolgeAdi;
+        _duzenleAciklama = bolge.Aciklama;
+        _bolgeDuzenleDialogAcik = true;
+    }
+
+    private async Task BolgeGuncelle()
+    {
+        if (_duzenlenenBolge == null) return;
+        if (string.IsNullOrWhiteSpace(_duzenleKodu) || string.IsNullOrWhiteSpace(_duzenleAdi))
+        {
+            _mesaj = "Bölge kodu ve adı zorunludur."; _hata = true; return;
+        }
+        try
+        {
+            var dto = new BolgeOlusturDto(Id, _duzenleKodu, _duzenleAdi, _duzenleAciklama);
+            await BolgeService.UpdateAsync(_duzenlenenBolge.Id, dto);
+            _bolgeDuzenleDialogAcik = false;
+            _mesaj = "Bölge güncellendi."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+    }
+
+    // --- Bölge Sil ---
+    private void BolgeSilOnayla(BolgeDto bolge)
+    {
+        _silinecekBolge = bolge;
+        _silOnayDialogAcik = true;
+    }
+
+    private async Task BolgeSil()
+    {
+        if (_silinecekBolge == null) return;
+        try
+        {
+            await BolgeService.DeleteAsync(_silinecekBolge.Id);
+            _silOnayDialogAcik = false;
+            _silinecekBolge = null;
+            _mesaj = "Bölge silindi."; _hata = false;
             await Yukle();
         }
         catch (Exception ex) { _mesaj = ex.Message; _hata = true; }

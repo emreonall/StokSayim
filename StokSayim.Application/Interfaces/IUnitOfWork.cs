@@ -9,7 +9,7 @@ public interface IUnitOfWork : IDisposable
     IEkipRepository Ekipler { get; }
     IEkipGrubuRepository EkipGruplari { get; }
     ISayimOturumuRepository SayimOturumlari { get; }
-    ISayimTuruRepository SayimTurleri { get; }
+    ISayimTuruRepository SayimTurlari { get; }
     ISayimKaydiRepository SayimKayitlari { get; }
     IErpStokRepository ErpStoklar { get; }
     ITurSonucuRepository TurSonuclari { get; }

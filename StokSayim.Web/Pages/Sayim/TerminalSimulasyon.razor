@@ -1,0 +1,538 @@
+@page "/simulasyon/terminal"
+@attribute [Authorize(Roles = "Admin,SayimSorumlusu,SayimEkibi")]
+@inject IAuthHttpService AuthService
+@inject ISayimOturumuHttpService OturumuService
+@inject ISayimKaydiHttpService KaydiService
+@inject NavigationManager Nav
+
+<PageTitle>El Terminali Simülasyonu</PageTitle>
+
+<div class="ss-page-header">
+    <div>
+        <h1 class="ss-page-title">🔧 El Terminali Simülasyonu</h1>
+        <p class="ss-page-subtitle">Gerçek API üzerinde ekip sayım akışını simüle eder</p>
+    </div>
+    <SfButton CssClass="e-outline" @onclick="@(() => Nav.NavigateTo("/"))">← Geri</SfButton>
+</div>
+
+@if (!string.IsNullOrEmpty(_hata))
+{
+    <div class="ss-alert ss-alert-danger">@_hata</div>
+}
+@if (!string.IsNullOrEmpty(_basari))
+{
+    <div class="ss-alert ss-alert-success">@_basari</div>
+}
+
+<!-- Adım göstergesi -->
+<div style="display:flex; gap:0; margin-bottom:24px; border-radius:8px; overflow:hidden; border:1px solid var(--border)">
+    @foreach (var (label, idx) in new[] { ("1. Giriş", 0), ("2. Görev", 1), ("3. Kayıt Aç", 2), ("4. Sayım", 3), ("5. Tamamla", 4), ("6. Karşılaştır", 5) })
+    {
+        var aktif = _adim == idx;
+        var tamamlandi = _adim > idx;
+        <div style="flex:1; padding:10px 6px; text-align:center; font-size:12px; font-weight:600;
+            background:@(aktif ? "var(--primary)" : tamamlandi ? "var(--success)" : "var(--bg)");
+            color:@(aktif || tamamlandi ? "#fff" : "var(--muted)");
+            border-right: 1px solid var(--border)">
+            @(tamamlandi ? "✓ " : "")@label
+        </div>
+    }
+</div>
+
+<!-- ADIM 1: GİRİŞ -->
+@if (_adim == 0)
+{
+    <div class="ss-card" style="max-width:480px; margin:0 auto">
+        <div class="ss-card-title">🔐 Ekip Kullanıcısı Girişi</div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:16px">
+            SayimEkibi rolündeki kullanıcı bilgilerini girin.
+        </p>
+        <div class="ss-form-group">
+            <label>E-posta</label>
+            <SfTextBox @bind-Value="_email" Placeholder="ekip@firma.com" />
+        </div>
+        <div class="ss-form-group">
+            <label>Şifre</label>
+            <SfTextBox @bind-Value="_sifre" Type="InputType.Password" Placeholder="••••••" />
+        </div>
+        <SfButton CssClass="e-primary" Disabled="@_yukleniyor" @onclick="Login" style="width:100%">
+            @(_yukleniyor ? "Giriş yapılıyor..." : "Giriş Yap →")
+        </SfButton>
+    </div>
+}
+
+<!-- ADIM 2: AKTİF GÖREV -->
+@if (_adim == 1)
+{
+    <div class="ss-card" style="max-width:560px; margin:0 auto">
+        <div class="ss-card-title">👤 Aktif Görev Bilgisi</div>
+        @if (_gorev == null)
+        {
+            <div class="ss-alert ss-alert-warn">Bu kullanıcı için aktif görev bulunamadı.</div>
+            <p style="font-size:13px; color:var(--muted)">
+                Kullanıcının bir ekibe atanmış olması ve o ekibin aktif bir tura katılımcı olarak eklenmiş olması gerekir.
+            </p>
+            <SfButton CssClass="e-outline" @onclick="@(() => _adim = 0)">← Geri Dön</SfButton>
+        }
+        else if (!_gorev.GorevVar)
+        {
+            <div class="ss-alert ss-alert-warn">Kullanıcının aktif görevi yok.</div>
+            <table style="width:100%; border-collapse:collapse; margin:12px 0">
+                <tr><td style="padding:6px 0; color:var(--muted); width:140px">Kullanıcı</td><td style="font-weight:600">@_gorev.AdSoyad</td></tr>
+                <tr><td style="padding:6px 0; color:var(--muted)">Ekip</td><td>@(_gorev.EkipAdi ?? "—")</td></tr>
+            </table>
+            <SfButton CssClass="e-outline" @onclick="@(() => _adim = 0)">← Geri Dön</SfButton>
+        }
+        else
+        {
+            <table style="width:100%; border-collapse:collapse; margin-bottom:20px">
+                <tr><td style="padding:8px 0; color:var(--muted); width:140px">Kullanıcı</td><td style="font-weight:600">@_gorev.AdSoyad</td></tr>
+                <tr><td style="padding:8px 0; color:var(--muted)">Ekip</td><td><span class="ss-badge ss-badge-primary">@_gorev.EkipAdi</span></td></tr>
+                <tr><td style="padding:8px 0; color:var(--muted)">Rol</td><td><span class="ss-badge ss-badge-accent">@_gorev.EkipRolu?.Ad</span></td></tr>
+                <tr><td style="padding:8px 0; color:var(--muted)">Bölge</td><td style="font-weight:600">@_gorev.BolgeAdi</td></tr>
+                <tr><td style="padding:8px 0; color:var(--muted)">Tur No</td><td>Tur @_gorev.TurNo</td></tr>
+                <tr><td style="padding:8px 0; color:var(--muted)">Tur Tipi</td><td>@_gorev.TurTipi</td></tr>
+                @if (_gorev.SayimKaydiId.HasValue)
+                {
+                    <tr>
+                        <td style="padding:8px 0; color:var(--muted)">Kayıt Durumu</td>
+                        <td><span class="ss-badge ss-badge-warn">Zaten açık (ID: @_gorev.SayimKaydiId)</span></td>
+                    </tr>
+                }
+            </table>
+            <div style="display:flex; gap:8px">
+                <SfButton CssClass="e-outline" @onclick="@(() => _adim = 0)">← Geri</SfButton>
+                @if (_gorev.SayimKaydiId.HasValue)
+                {
+                    <SfButton CssClass="e-primary" @onclick="MevcutKaydiYukle">Mevcut Kaydı Kullan →</SfButton>
+                }
+                else
+                {
+                    <SfButton CssClass="e-primary" @onclick="@(() => _adim = 2)">Devam →</SfButton>
+                }
+            </div>
+        }
+    </div>
+}
+
+<!-- ADIM 3: KAYIT AÇ -->
+@if (_adim == 2)
+{
+    <div class="ss-card" style="max-width:560px; margin:0 auto">
+        <div class="ss-card-title">📋 Sayım Kaydı Aç</div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:16px">
+            Tur <strong>@_gorev?.TurNo</strong> için <strong>@_gorev?.EkipAdi</strong> ekibinin sayım kaydı açılacak.
+        </p>
+        <table style="width:100%; border-collapse:collapse; margin-bottom:20px">
+            <tr><td style="padding:6px 0; color:var(--muted); width:120px">Tur ID</td><td style="font-weight:600">@_gorev?.SayimTuruId</td></tr>
+            <tr><td style="padding:6px 0; color:var(--muted)">Ekip ID</td><td style="font-weight:600">@_gorev?.EkipId</td></tr>
+            <tr><td style="padding:6px 0; color:var(--muted)">Bölge</td><td style="font-weight:600">@_gorev?.BolgeAdi</td></tr>
+        </table>
+        <div style="display:flex; gap:8px">
+            <SfButton CssClass="e-outline" @onclick="@(() => _adim = 1)">← Geri</SfButton>
+            <SfButton CssClass="e-primary" Disabled="@_yukleniyor" @onclick="KaydiAc">
+                @(_yukleniyor ? "Açılıyor..." : "▶ Kaydı Aç →")
+            </SfButton>
+        </div>
+    </div>
+}
+
+<!-- ADIM 4: SAYIM -->
+@if (_adim == 3)
+{
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px">
+        <!-- Sol: Malzeme Ekle -->
+        <div class="ss-card">
+            <div class="ss-card-title">📦 Malzeme Ekle</div>
+            <p style="font-size:12px; color:var(--muted); margin-bottom:12px">
+                Kayıt ID: <strong>@_kaydi?.Id</strong> · @_kaydi?.EkipAdi (@_kaydi?.EkipRolu)
+            </p>
+            <div class="ss-form-group">
+                <label>Malzeme Kodu *</label>
+                <SfTextBox @bind-Value="_malzemeKodu" Placeholder="Örn: MAL001" />
+            </div>
+            <div class="ss-form-group">
+                <label>Malzeme Adı *</label>
+                <SfTextBox @bind-Value="_malzemeAdi" Placeholder="Örn: Vida M6x20" />
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px">
+                <div class="ss-form-group">
+                    <label>Miktar *</label>
+                    <SfNumericTextBox @bind-Value="_miktar" Min="0" Decimals="2" />
+                </div>
+                <div class="ss-form-group">
+                    <label>Birim *</label>
+                    <SfTextBox @bind-Value="_birim" Placeholder="ADET" />
+                </div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px">
+                <div class="ss-form-group">
+                    <label>Lot No</label>
+                    <SfTextBox @bind-Value="_lotNo" Placeholder="İsteğe bağlı" />
+                </div>
+                <div class="ss-form-group">
+                    <label>Seri No</label>
+                    <SfTextBox @bind-Value="_seriNo" Placeholder="İsteğe bağlı" />
+                </div>
+            </div>
+            <div style="display:flex; gap:8px">
+                <SfButton CssClass="e-primary" Disabled="@_yukleniyor" @onclick="MalzemeEkle" style="flex:1">
+                    @(_yukleniyor ? "Ekleniyor..." : "➕ Ekle")
+                </SfButton>
+                <SfButton CssClass="e-outline" @onclick="FormTemizle">Temizle</SfButton>
+            </div>
+        </div>
+
+        <!-- Sağ: Eklenen Malzemeler -->
+        <div class="ss-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
+                <div class="ss-card-title" style="margin-bottom:0">
+                    Sayım Listesi
+                    <span class="ss-badge ss-badge-primary" style="margin-left:8px">@(_kaydi?.Detaylar.Count() ?? 0)</span>
+                </div>
+                <SfButton CssClass="e-outline e-small" @onclick="KaydiYenile">🔄</SfButton>
+            </div>
+
+            @if (_kaydi == null || !_kaydi.Detaylar.Any())
+            {
+                <div class="ss-empty">
+                    <div class="ss-empty-icon">📭</div>
+                    <div class="ss-empty-text">Henüz malzeme eklenmedi</div>
+                </div>
+            }
+            else
+            {
+                <div style="overflow-y:auto; max-height:400px">
+                    <table style="width:100%; border-collapse:collapse; font-size:13px">
+                        <thead>
+                            <tr style="background:var(--bg)">
+                                <th style="padding:6px 8px; text-align:left; color:var(--muted)">Kod</th>
+                                <th style="padding:6px 8px; text-align:left; color:var(--muted)">Malzeme</th>
+                                <th style="padding:6px 8px; text-align:right; color:var(--muted)">Miktar</th>
+                                <th style="padding:6px 8px; text-align:center; color:var(--muted)">İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var d in _kaydi.Detaylar)
+                            {
+                                <tr style="border-top:1px solid var(--border)">
+                                    <td style="padding:6px 8px; font-weight:600">@d.MalzemeKodu</td>
+                                    <td style="padding:6px 8px">
+                                        @d.MalzemeAdi
+                                        @if (!string.IsNullOrEmpty(d.LotNo))
+                                        {
+                                            <div style="font-size:11px; color:var(--muted)">Lot: @d.LotNo</div>
+                                        }
+                                    </td>
+                                    <td style="padding:6px 8px; text-align:right; font-weight:600">
+                                        @d.SayilanMiktar @d.Birim
+                                    </td>
+                                    <td style="padding:6px 8px; text-align:center">
+                                        <span style="cursor:pointer; color:var(--danger); font-size:16px"
+                                              @onclick="@(async () => await DetaySil(d.Id))">🗑</span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:12px">
+                <SfButton CssClass="e-danger" Disabled="@(_kaydi == null || _yukleniyor)"
+                          @onclick="@(() => _adim = 4)" style="width:100%">
+                    ✅ Sayımı Tamamla →
+                </SfButton>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ADIM 5: TAMAMLA -->
+@if (_adim == 4)
+{
+    <div class="ss-card" style="max-width:560px; margin:0 auto">
+        <div class="ss-card-title">✅ Sayımı Tamamla</div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:16px">
+            Toplam <strong>@(_kaydi?.Detaylar.Count() ?? 0) malzeme</strong> kaydedildi. Tamamladıktan sonra değişiklik yapılamaz.
+        </p>
+        <table style="width:100%; border-collapse:collapse; margin-bottom:20px">
+            @foreach (var d in _kaydi?.Detaylar ?? [])
+            {
+                <tr style="border-bottom:1px solid var(--border)">
+                    <td style="padding:6px 0; font-weight:600">@d.MalzemeKodu</td>
+                    <td style="padding:6px 0">@d.MalzemeAdi</td>
+                    <td style="padding:6px 0; text-align:right; font-weight:600">@d.SayilanMiktar @d.Birim</td>
+                </tr>
+            }
+        </table>
+        <div style="display:flex; gap:8px">
+            <SfButton CssClass="e-outline" @onclick="@(() => _adim = 3)">← Geri Dön</SfButton>
+            <SfButton CssClass="e-primary" Disabled="@_yukleniyor" @onclick="Tamamla">
+                @(_yukleniyor ? "Tamamlanıyor..." : "✅ Evet, Tamamla")
+            </SfButton>
+        </div>
+    </div>
+}
+
+<!-- ADIM 6: KARŞILAŞTIRMA -->
+@if (_adim == 5)
+{
+    <div class="ss-card" style="max-width:560px; margin:0 auto; text-align:center; margin-bottom:24px">
+        <div style="font-size:48px; margin-bottom:12px">🎉</div>
+        <div class="ss-card-title">Sayım Tamamlandı!</div>
+        <p style="color:var(--muted); font-size:14px">
+            <strong>@_kaydi?.EkipAdi</strong> ekibinin sayımı başarıyla kaydedildi.
+        </p>
+        <p style="font-size:13px; color:var(--muted); margin-top:8px">
+            Tüm ekipler tamamladıktan sonra yönetici karşılaştırma başlatabilir.
+        </p>
+    </div>
+
+    @if (_gorev?.SayimTuruId.HasValue == true)
+    {
+        <div class="ss-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
+                <div class="ss-card-title" style="margin-bottom:0">⚖️ Karşılaştırma Başlat</div>
+                <span style="font-size:12px; color:var(--muted)">Admin/SayimSorumlusu yetkisi gerekir</span>
+            </div>
+            <p style="font-size:13px; color:var(--muted); margin-bottom:16px">
+                Tüm ekipler sayımını tamamladıysa karşılaştırma hesaplanabilir. Tüm katılımcılar tamamlamadan hata verir.
+            </p>
+            <SfButton CssClass="e-primary" Disabled="@_yukleniyor" @onclick="Karsilastir">
+                @(_yukleniyor ? "Hesaplanıyor..." : "⚖️ Karşılaştırmayı Hesapla")
+            </SfButton>
+        </div>
+    }
+
+    @if (_turSonucu != null)
+    {
+        <div class="ss-card">
+            <div class="ss-card-title">📊 Karşılaştırma Sonucu</div>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px">
+                <div style="text-align:center; padding:16px; background:var(--bg); border-radius:8px">
+                    <div style="font-size:28px; font-weight:700">@_turSonucu.ToplamMalzeme</div>
+                    <div style="font-size:12px; color:var(--muted)">Toplam</div>
+                </div>
+                <div style="text-align:center; padding:16px; background:#f0fdf4; border-radius:8px">
+                    <div style="font-size:28px; font-weight:700; color:var(--success)">@_turSonucu.Eslesen</div>
+                    <div style="font-size:12px; color:var(--muted)">Eşleşti</div>
+                </div>
+                <div style="text-align:center; padding:16px; background:#fff5f5; border-radius:8px">
+                    <div style="font-size:28px; font-weight:700; color:var(--danger)">@_turSonucu.Farkli</div>
+                    <div style="font-size:12px; color:var(--muted)">Farklı</div>
+                </div>
+            </div>
+            <div style="text-align:center">
+                <span class="ss-badge @(_turSonucu.Farkli == 0 ? "ss-badge-success" : "ss-badge-danger")" style="font-size:14px; padding:8px 16px">
+                    @(_turSonucu.Farkli == 0 ? "✓ Tüm malzemeler eşleşti" : $"⚠ {_turSonucu.Farkli} malzemede fark var")
+                </span>
+            </div>
+        </div>
+    }
+
+    <div style="display:flex; gap:8px; justify-content:center; margin-top:16px">
+        <SfButton CssClass="e-outline" @onclick="YeniSimulasyon">🔄 Yeni Simülasyon Başlat</SfButton>
+        <SfButton CssClass="e-outline" @onclick="@(() => Nav.NavigateTo($"/bolgeler/{_gorev?.BolgeId}"))">
+            📍 Bölge Detayına Git
+        </SfButton>
+    </div>
+}
+
+@code {
+    private int _adim = 0;
+    private bool _yukleniyor = false;
+    private string _hata = "";
+    private string _basari = "";
+
+    // Giriş
+    private string _email = "";
+    private string _sifre = "";
+
+    // Görev
+    private AktifGorevDto? _gorev;
+
+    // Kayıt
+    private SayimKaydiDto? _kaydi;
+
+    // Malzeme form
+    private string _malzemeKodu = "";
+    private string _malzemeAdi = "";
+    private decimal _miktar = 0;
+    private string _birim = "ADET";
+    private string? _lotNo;
+    private string? _seriNo;
+
+    // Sonuç
+    private TurSonucuOzetDto? _turSonucu;
+
+    private void MesajTemizle() { _hata = ""; _basari = ""; }
+
+    // ADIM 1: Login
+    private async Task Login()
+    {
+        MesajTemizle();
+        if (string.IsNullOrWhiteSpace(_email) || string.IsNullOrWhiteSpace(_sifre))
+        {
+            _hata = "E-posta ve şifre zorunludur."; return;
+        }
+        _yukleniyor = true;
+        try
+        {
+            var result = await AuthService.LoginAsync(new LoginRequestDto(_email, _sifre));
+            if (result == null) { _hata = "Giriş başarısız. Bilgileri kontrol edin."; return; }
+
+            _gorev = await AuthService.GetAktifGorevAsync();
+            _basari = $"Giriş başarılı. Hoş geldiniz, {result.AdSoyad}!";
+            // Aktif kayıt varsa doğrudan yükle ve sayım adımına geç
+            if (_gorev?.SayimKaydiId.HasValue == true)
+            {
+                _kaydi = await KaydiService.GetByIdAsync(_gorev.SayimKaydiId.Value);
+                _adim = 3;
+            }
+            else
+            {
+                _adim = 1;
+            }
+        }
+        catch (Exception ex) { _hata = ex.Message; }
+        finally { _yukleniyor = false; }
+    }
+
+    // ADIM 2→3: Mevcut kaydı yükle
+    private async Task MevcutKaydiYukle()
+    {
+        if (_gorev?.SayimKaydiId == null) return;
+        _yukleniyor = true;
+        try
+        {
+            _kaydi = await KaydiService.GetByIdAsync(_gorev.SayimKaydiId.Value);
+            _adim = 3;
+        }
+        catch (Exception ex) { _hata = ex.Message; }
+        finally { _yukleniyor = false; }
+    }
+
+    // ADIM 3: Kayıt aç
+    private async Task KaydiAc()
+    {
+        if (_gorev?.SayimTuruId == null || _gorev?.EkipId == null)
+        {
+            _hata = "Tur veya ekip bilgisi eksik."; return;
+        }
+        MesajTemizle();
+        _yukleniyor = true;
+        try
+        {
+            _kaydi = await KaydiService.AcAsync(_gorev.SayimTuruId.Value, _gorev.EkipId.Value);
+            if (_kaydi == null) { _hata = "Kayıt açılamadı."; return; }
+            _basari = $"Sayım kaydı açıldı. (ID: {_kaydi.Id})";
+            _adim = 3;
+        }
+        catch (Exception ex) { _hata = ex.Message; }
+        finally { _yukleniyor = false; }
+    }
+
+    // ADIM 4: Malzeme ekle
+    private async Task MalzemeEkle()
+    {
+        if (_kaydi == null) return;
+        if (string.IsNullOrWhiteSpace(_malzemeKodu) || string.IsNullOrWhiteSpace(_malzemeAdi))
+        {
+            _hata = "Malzeme kodu ve adı zorunludur."; return;
+        }
+        if (_miktar <= 0) { _hata = "Miktar 0'dan büyük olmalıdır."; return; }
+        if (string.IsNullOrWhiteSpace(_birim)) { _hata = "Birim zorunludur."; return; }
+
+        MesajTemizle();
+        _yukleniyor = true;
+        try
+        {
+            var dto = new SayimKaydiDetayEkleDto(
+                _malzemeKodu.Trim().ToUpper(),
+                _malzemeAdi.Trim(),
+                string.IsNullOrWhiteSpace(_lotNo) ? null : _lotNo.Trim(),
+                string.IsNullOrWhiteSpace(_seriNo) ? null : _seriNo.Trim(),
+                _miktar,
+                _birim.Trim().ToUpper(),
+                null
+            );
+            await KaydiService.DetayEkleAsync(_kaydi.Id, dto);
+            _basari = $"{_malzemeKodu} eklendi.";
+            FormTemizle();
+            await KaydiYenile();
+        }
+        catch (Exception ex) { _hata = ex.Message; }
+        finally { _yukleniyor = false; }
+    }
+
+    private async Task DetaySil(int detayId)
+    {
+        MesajTemizle();
+        _yukleniyor = true;
+        try
+        {
+            await KaydiService.DetaySilAsync(detayId);
+            await KaydiYenile();
+        }
+        catch (Exception ex) { _hata = ex.Message; }
+        finally { _yukleniyor = false; }
+    }
+
+    private async Task KaydiYenile()
+    {
+        if (_kaydi == null) return;
+        _kaydi = await KaydiService.GetByIdAsync(_kaydi.Id);
+    }
+
+    private void FormTemizle()
+    {
+        _malzemeKodu = ""; _malzemeAdi = ""; _miktar = 0;
+        _birim = "ADET"; _lotNo = null; _seriNo = null;
+    }
+
+    // ADIM 5: Tamamla
+    private async Task Tamamla()
+    {
+        if (_kaydi == null) return;
+        MesajTemizle();
+        _yukleniyor = true;
+        try
+        {
+            await KaydiService.TamamlaAsync(_kaydi.Id);
+            _basari = "Sayım başarıyla tamamlandı!";
+            _adim = 5;
+        }
+        catch (Exception ex) { _hata = ex.Message; }
+        finally { _yukleniyor = false; }
+    }
+
+    // ADIM 6: Karşılaştır
+    private async Task Karsilastir()
+    {
+        if (_gorev?.SayimTuruId == null) return;
+        MesajTemizle();
+        _yukleniyor = true;
+        try
+        {
+            await OturumuService.HesaplaKarsilastirmaAsync(_gorev.SayimTuruId.Value);
+            // Sonucu almak için oturumu çek
+            if (_gorev.BolgeId.HasValue)
+            {
+                var oturum = await OturumuService.GetByBolgeAsync(_gorev.BolgeId.Value);
+                var tur = oturum?.Turler.FirstOrDefault(t => t.Id == _gorev.SayimTuruId);
+                _turSonucu = tur?.Sonuc;
+            }
+            _basari = "Karşılaştırma tamamlandı.";
+        }
+        catch (Exception ex) { _hata = ex.Message; }
+        finally { _yukleniyor = false; }
+    }
+
+    private void YeniSimulasyon()
+    {
+        _adim = 0; _email = ""; _sifre = ""; _gorev = null;
+        _kaydi = null; _turSonucu = null;
+        MesajTemizle(); FormTemizle();
+    }
+}

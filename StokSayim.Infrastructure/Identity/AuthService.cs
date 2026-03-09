@@ -2,11 +2,15 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using StokSayim.Application.DTOs.Auth;
+using StokSayim.Application.Interfaces;
 using StokSayim.Application.Interfaces.Services;
 using StokSayim.Domain.Entities;
+using StokSayim.Domain.Enums;
+using StokSayim.Infrastructure.Data;
 
 namespace StokSayim.Infrastructure.Identity;
 
@@ -15,12 +19,17 @@ public class AuthService : IAuthService
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IConfiguration _config;
     private readonly IEkipService _ekipService;
+    private readonly IUnitOfWork _uow;
+    private readonly AppDbContext _db;
 
-    public AuthService(UserManager<ApplicationUser> userManager, IConfiguration config, IEkipService ekipService)
+    public AuthService(UserManager<ApplicationUser> userManager, IConfiguration config,
+        IEkipService ekipService, IUnitOfWork uow, AppDbContext db)
     {
         _userManager = userManager;
         _config = config;
         _ekipService = ekipService;
+        _uow = uow;
+        _db = db;
     }
 
     public async Task<AuthResponseDto> LoginAsync(LoginRequestDto request, CancellationToken ct = default)
@@ -39,7 +48,7 @@ public class AuthService : IAuthService
 
         return new AuthResponseDto(
             Token: token,
-            RefreshToken: string.Empty, // Gerekirse implement edilebilir
+            RefreshToken: string.Empty,
             TokenSonGecerlilik: DateTime.UtcNow.AddHours(8),
             KullaniciId: user.Id,
             AdSoyad: user.AdSoyad,
@@ -56,25 +65,92 @@ public class AuthService : IAuthService
         var user = await _userManager.FindByIdAsync(kullaniciId);
         if (user == null) return null;
 
-        var ekip = await _ekipService.GetEkipByKullaniciIdAsync(kullaniciId, ct);
+        // Kullanıcının ekibini bul
+        var ekip = await _uow.Ekipler.GetByKullaniciIdAsync(kullaniciId, ct);
+        if (ekip == null)
+            return Bos(kullaniciId, user.AdSoyad);
+
+        // Önce aktif açık sayım kaydı var mı? (Taslak veya Devam durumunda)
+        var aktifKaydi = await _uow.SayimKayitlari.GetAktifKaydiByKullaniciAsync(kullaniciId, ct);
+        if (aktifKaydi != null)
+        {
+            var tur = aktifKaydi.SayimTuru;
+            var oturum = tur.SayimOturumu;
+            var bolge = oturum.Bolge;
+            var katilimci = tur.Katilimcilar.FirstOrDefault(k => k.EkipId == ekip.Id);
+
+            return new AktifGorevDto(
+                KullaniciId: kullaniciId,
+                AdSoyad: user.AdSoyad,
+                EkipId: ekip.Id,
+                EkipAdi: ekip.EkipAdi,
+                EkipRolu: katilimci != null
+                    ? new EkipRoluDto((int)katilimci.EkipRolu, RolAdi(katilimci.EkipRolu))
+                    : null,
+                BolgeId: bolge.Id,
+                BolgeAdi: bolge.BolgeAdi,
+                SayimOturumuId: oturum.Id,
+                SayimTuruId: tur.Id,
+                TurNo: tur.TurNo,
+                TurTipi: tur.TurTipi.ToString(),
+                SayimKaydiId: aktifKaydi.Id,
+                SayimKaydiDurum: aktifKaydi.Durum.ToString(),
+                GorevVar: true
+            );
+        }
+
+        // Aktif kayıt yoksa — ekibin bağlı olduğu bölgeyi EkipGrubuEkip üzerinden bul
+        var ekipGrubuEkipEntry = await _db.Set<EkipGrubuEkip>()
+            .Include(x => x.EkipGrubu)
+            .FirstOrDefaultAsync(x => x.EkipId == ekip.Id, ct);
+
+        if (ekipGrubuEkipEntry == null)
+            return new AktifGorevDto(kullaniciId, user.AdSoyad, ekip.Id, ekip.EkipAdi,
+                null, null, null, null, null, null, null, null, null, false);
+
+        var bolgeEntity = await _uow.Bolgeler.GetWithOturumAsync(ekipGrubuEkipEntry.EkipGrubu.BolgeId, ct);
+        if (bolgeEntity?.SayimOturumu == null)
+            return new AktifGorevDto(kullaniciId, user.AdSoyad, ekip.Id, ekip.EkipAdi, null,
+                bolgeEntity?.Id, bolgeEntity?.BolgeAdi, null, null, null, null, null, null, false);
+
+        var aktifTur = await _uow.SayimTurlari.GetAktifTurByOturumuAsync(bolgeEntity.SayimOturumu.Id, ct);
+        if (aktifTur == null)
+            return new AktifGorevDto(kullaniciId, user.AdSoyad, ekip.Id, ekip.EkipAdi, null,
+                bolgeEntity.Id, bolgeEntity.BolgeAdi, bolgeEntity.SayimOturumu.Id,
+                null, null, null, null, null, false);
+
+        var katilimciEntry = aktifTur.Katilimcilar.FirstOrDefault(k => k.EkipId == ekip.Id);
 
         return new AktifGorevDto(
             KullaniciId: kullaniciId,
             AdSoyad: user.AdSoyad,
-            EkipId: ekip?.Id,
-            EkipAdi: ekip?.EkipAdi,
-            EkipRolu: null, // SayimTuruKatilimci'dan doldurulur
-            BolgeId: null,
-            BolgeAdi: null,
-            SayimOturumuId: null,
-            SayimTuruId: null,
-            TurNo: null,
-            TurTipi: null,
-            SayimKaydiId: null,
+            EkipId: ekip.Id,
+            EkipAdi: ekip.EkipAdi,
+            EkipRolu: katilimciEntry != null
+                ? new EkipRoluDto((int)katilimciEntry.EkipRolu, RolAdi(katilimciEntry.EkipRolu))
+                : null,
+            BolgeId: bolgeEntity.Id,
+            BolgeAdi: bolgeEntity.BolgeAdi,
+            SayimOturumuId: bolgeEntity.SayimOturumu.Id,
+            SayimTuruId: aktifTur.Id,
+            TurNo: aktifTur.TurNo,
+            TurTipi: aktifTur.TurTipi.ToString(),
+            SayimKaydiId: katilimciEntry?.SayimKaydiId,
             SayimKaydiDurum: null,
-            GorevVar: ekip != null
+            GorevVar: katilimciEntry != null
         );
     }
+
+    private static AktifGorevDto Bos(string kullaniciId, string adSoyad) =>
+        new(kullaniciId, adSoyad, null, null, null, null, null, null, null, null, null, null, null, false);
+
+    private static string RolAdi(EkipRolu rol) => rol switch
+    {
+        EkipRolu.Birinci => "Birinci Ekip",
+        EkipRolu.Ikinci => "İkinci Ekip",
+        EkipRolu.Kontrol => "Kontrol Ekibi",
+        _ => rol.ToString()
+    };
 
     private string GenerateJwtToken(ApplicationUser user, IList<string> roles)
     {

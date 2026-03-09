@@ -62,7 +62,7 @@ public class EkipService : IEkipService
     public async Task KullaniciEkleAsync(int ekipId, string kullaniciId, CancellationToken ct = default)
     {
         var ekip = await _uow.Ekipler.GetByIdAsync(ekipId, ct)
-            ?? throw new KeyNotFoundException($"Ekip bulunamadı: {ekipId}");
+          ?? throw new KeyNotFoundException($"Ekip bulunamadı: {ekipId}");
 
         var mevcutEkip = await _uow.Ekipler.GetByKullaniciIdAsync(kullaniciId, ct);
         if (mevcutEkip != null && mevcutEkip.Id != ekipId)
@@ -76,7 +76,8 @@ public class EkipService : IEkipService
             AktifMi = true
         };
 
-        await _uow.Ekipler.AddAsync(ekip, ct); // EkipKullanici için ayrı repository eklenebilir
+        // ✅ ekip değil, kayit ekleniyor
+        ekip.EkipKullanicilari.Add(kayit);
         await _uow.SaveChangesAsync(ct);
     }
 

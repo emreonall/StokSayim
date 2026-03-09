@@ -36,7 +36,7 @@ public class BolgeRepository : Repository<Bolge>, IBolgeRepository
     public async Task<Bolge?> GetWithOturumAsync(int id, CancellationToken ct = default)
         => await _context.Bolgeler
             .Include(x => x.EkipGrubu).ThenInclude(g => g!.Ekipler).ThenInclude(e => e.Ekip)
-            .Include(x => x.SayimOturumu).ThenInclude(o => o!.SayimTurleri).ThenInclude(t => t.Katilimcilar)
+            .Include(x => x.SayimOturumu).ThenInclude(o => o!.SayimTurlari).ThenInclude(t => t.Katilimcilar)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
 }
 
@@ -82,16 +82,16 @@ public class SayimOturumuRepository : Repository<SayimOturumu>, ISayimOturumuRep
 
     public async Task<SayimOturumu?> GetWithTurlerAsync(int id, CancellationToken ct = default)
         => await _context.SayimOturumlari
-            .Include(x => x.SayimTurleri)
+            .Include(x => x.SayimTurlari)
                 .ThenInclude(t => t.Katilimcilar).ThenInclude(k => k.Ekip)
-            .Include(x => x.SayimTurleri)
+            .Include(x => x.SayimTurlari)
                 .ThenInclude(t => t.TurSonucu).ThenInclude(s => s!.Detaylar)
             .Include(x => x.Bolge)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
 
     public async Task<SayimOturumu?> GetByBolgeIdAsync(int bolgeId, CancellationToken ct = default)
         => await _context.SayimOturumlari
-            .Include(x => x.SayimTurleri).ThenInclude(t => t.Katilimcilar)
+            .Include(x => x.SayimTurlari).ThenInclude(t => t.Katilimcilar)
             .FirstOrDefaultAsync(x => x.BolgeId == bolgeId, ct);
 
     public async Task<IEnumerable<SayimOturumu>> GetByPlanIdAsync(int planId, CancellationToken ct = default)
@@ -106,13 +106,13 @@ public class SayimTuruRepository : Repository<SayimTuru>, ISayimTuruRepository
     public SayimTuruRepository(AppDbContext context) : base(context) { }
 
     public async Task<SayimTuru?> GetWithKatilimcilarAsync(int id, CancellationToken ct = default)
-        => await _context.SayimTurleri
+        => await _context.SayimTurlari
             .Include(x => x.Katilimcilar).ThenInclude(k => k.Ekip)
             .Include(x => x.Katilimcilar).ThenInclude(k => k.SayimKaydi).ThenInclude(s => s!.Detaylar)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
 
     public async Task<SayimTuru?> GetAktifTurByOturumuAsync(int oturumuId, CancellationToken ct = default)
-        => await _context.SayimTurleri
+        => await _context.SayimTurlari
             .Include(x => x.Katilimcilar)
             .Where(x => x.SayimOturumuId == oturumuId &&
                        (x.Durum == SayimTuruDurum.Beklemede || x.Durum == SayimTuruDurum.DevamEdiyor || x.Durum == SayimTuruDurum.KarsilastirmaBekliyor))
@@ -145,6 +145,11 @@ public class SayimKaydiRepository : Repository<SayimKaydi>, ISayimKaydiRepositor
             .Where(x => x.SayimYapanKullaniciId == kullaniciId &&
                        (x.Durum == SayimKaydiDurum.Taslak || x.Durum == SayimKaydiDurum.Devam))
             .FirstOrDefaultAsync(ct);
+
+    public void DeleteDetay(SayimKaydiDetay detay)
+    {
+        _context.Remove(detay);
+    }
 }
 
 public class ErpStokRepository : Repository<ErpStok>, IErpStokRepository

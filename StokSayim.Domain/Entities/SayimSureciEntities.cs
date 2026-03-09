@@ -15,7 +15,7 @@ public class SayimOturumu : BaseEntity
     // Navigation
     public Bolge Bolge { get; set; } = null!;
     public SayimPlani SayimPlani { get; set; } = null!;
-    public ICollection<SayimTuru> SayimTurleri { get; set; } = new List<SayimTuru>();
+    public ICollection<SayimTuru> SayimTurlari { get; set; } = new List<SayimTuru>();
     public ICollection<GorevBildirimi> GorevBildirimleri { get; set; } = new List<GorevBildirimi>();
 }
 

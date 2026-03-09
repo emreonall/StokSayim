@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StokSayim.Application.DTOs.Auth;
+using StokSayim.Application.DTOs.SayimKaydi;
 using StokSayim.Application.Interfaces.Services;
 
 namespace StokSayim.API.Controllers;
@@ -346,7 +347,7 @@ public class SayimKaydiController : ControllerBase
 
     [HttpPost("{id}/detay")]
     [Authorize(Roles = "SayimEkibi,Admin,SayimSorumlusu")]
-    public async Task<IActionResult> DetayEkle(int id, [FromBody] Application.DTOs.SayimKaydi.SayimKaydiDetayEkleDto request, CancellationToken ct)
+    public async Task<IActionResult> DetayEkle(int id, [FromBody] SayimKaydiDetayEkleDto request, CancellationToken ct)
     {
         await _service.DetayEkleAsync(id, request, ct);
         return NoContent();
@@ -354,7 +355,7 @@ public class SayimKaydiController : ControllerBase
 
     [HttpPut("detay/{detayId}")]
     [Authorize(Roles = "SayimEkibi,Admin,SayimSorumlusu")]
-    public async Task<IActionResult> DetayGuncelle(int detayId, [FromBody] Application.DTOs.SayimKaydi.SayimKaydiDetayEkleDto request, CancellationToken ct)
+    public async Task<IActionResult> DetayGuncelle(int detayId, [FromBody] SayimKaydiDetayEkleDto request, CancellationToken ct)
     {
         await _service.DetayGuncelleAsync(detayId, request, ct);
         return NoContent();

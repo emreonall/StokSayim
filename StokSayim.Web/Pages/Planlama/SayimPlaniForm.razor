@@ -51,17 +51,51 @@
         Bu sayıma dahil edilecek ERP depo kodlarını girin. ERP import sırasında sadece bu kodlardaki stoklar alınacaktır.
     </p>
 
+    <!-- Tek kod ekleme -->
     <div style="display:flex; gap:8px; margin-bottom:12px; align-items:flex-end">
         <div class="ss-form-group" style="flex:1; margin-bottom:0">
-            <label>Depo Kodu</label>
+            <label>Tek Kod Ekle</label>
             <SfTextBox @bind-Value="_yeniDepoKodu" Placeholder="Örn: WH01"
                        @onkeydown="DepoKoduKeyDown" />
         </div>
         <SfButton CssClass="e-outline" @onclick="DepoKoduEkle">+ Ekle</SfButton>
     </div>
 
+    <!-- Toplu yapıştırma -->
+    <div style="margin-bottom:16px">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px">
+            <label style="font-size:13px">
+                Toplu Ekle
+                <span style="color:var(--muted); font-weight:400"> — virgül, noktalı virgül veya satır sonu ile ayırın</span>
+            </label>
+            @if (!string.IsNullOrWhiteSpace(_topluKodlar))
+            {
+                <span style="font-size:12px; color:var(--muted)">
+                    @(_topluKodlar.Split(new string[] { ",", ";", "\n", "\r", " ", "\t" }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(k => k.Trim().ToUpper())
+                        .Where(k => !string.IsNullOrEmpty(k))
+                        .Distinct().Count()) kod algılandı
+                </span>
+            }
+        </div>
+        <textarea @bind="_topluKodlar" @bind:event="oninput"
+                  rows="4"
+                  placeholder="WH01, WH02, WH03&#10;veya her satıra bir kod"
+                  style="width:100%; padding:8px 12px; border:1px solid var(--border); border-radius:6px; font-size:14px; resize:vertical; font-family:inherit; box-sizing:border-box"></textarea>
+        <div style="display:flex; justify-content:flex-end; margin-top:6px">
+            <SfButton CssClass="e-outline" @onclick="TopluEkle">+ Tümünü Ekle</SfButton>
+        </div>
+    </div>
+
+    <!-- Eklenen kodlar -->
     @if (_depoKodlari.Any())
     {
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+            <span style="font-size:13px; color:var(--muted)">@_depoKodlari.Count kod eklendi</span>
+            <span style="font-size:12px; color:var(--danger); cursor:pointer" @onclick="TumunuTemizle">
+                Tümünü Temizle
+            </span>
+        </div>
         <div style="display:flex; flex-wrap:wrap; gap:6px">
             @foreach (var kod in _depoKodlari)
             {
@@ -97,6 +131,7 @@
     private DateTime _bitis = DateTime.Today.AddDays(7);
     private List<string> _depoKodlari = [];
     private string _yeniDepoKodu = "";
+    private string _topluKodlar = "";
     private string _hata = "";
     private bool _yukleniyor = false;
 
@@ -126,7 +161,30 @@
         }
     }
 
+    private void TopluEkle()
+    {
+        if (string.IsNullOrWhiteSpace(_topluKodlar)) return;
+
+        Console.WriteLine($"[DEBUG] Uzunluk: {_topluKodlar.Length}, İlk char: U+{(int)_topluKodlar[0]:X4}");
+
+        var yeniKodlar = _topluKodlar
+            .Replace("\r\n", "\n")
+            .Replace("\r", "\n")
+            .Split(new string[] { ",", ";", "\n", "\t", " " }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(k => k.Trim().ToUpper())
+            .Where(k => !string.IsNullOrEmpty(k) && !_depoKodlari.Contains(k))
+            .Distinct()
+            .ToList();
+
+        Console.WriteLine($"[DEBUG] Parse edilen kod sayısı: {yeniKodlar.Count}");
+
+        _depoKodlari.AddRange(yeniKodlar);
+        _topluKodlar = "";
+    }
+
     private void DepoKoduCikar(string kod) => _depoKodlari.Remove(kod);
+
+    private void TumunuTemizle() => _depoKodlari.Clear();
 
     private void DepoKoduKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {

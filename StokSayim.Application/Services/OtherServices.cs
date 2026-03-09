@@ -62,7 +62,7 @@ public class BolgeService : IBolgeService
                 Durum: bolge.SayimOturumu.Durum,
                 DurumAdi: bolge.SayimOturumu.Durum.ToString(),
                 AktifTurNo: bolge.SayimOturumu.AktifTurNo,
-                AktifTurTipi: bolge.SayimOturumu.SayimTurleri
+                AktifTurTipi: bolge.SayimOturumu.SayimTurlari
                     .OrderByDescending(t => t.TurNo).FirstOrDefault()?.TurTipi.ToString(),
                 BaslangicTarihi: bolge.SayimOturumu.BaslangicTarihi
             )
@@ -105,10 +105,15 @@ public class BolgeService : IBolgeService
     public async Task DeleteAsync(int id, CancellationToken ct = default)
     {
         var bolge = await _uow.Bolgeler.GetByIdAsync(id, ct)
-            ?? throw new KeyNotFoundException($"Bölge bulunamadı: {id}");
+         ?? throw new KeyNotFoundException($"Bölge bulunamadı: {id}");
 
         if (bolge.SayimOturumu != null)
             throw new InvalidOperationException("Sayım başlatılmış bölge silinemez.");
+
+        //  Sadece taslak plandaki bölge silinebilir
+        var plan = await _uow.SayimPlanlari.GetByIdAsync(bolge.SayimPlaniId, ct);
+        if (plan?.Durum != SayimPlaniDurum.Taslak)
+            throw new InvalidOperationException("Sadece taslak durumdaki planın bölgesi silinebilir.");
 
         _uow.Bolgeler.Delete(bolge);
         await _uow.SaveChangesAsync(ct);
@@ -122,7 +127,6 @@ public class BolgeService : IBolgeService
         if (bolge.SayimOturumu != null)
             throw new InvalidOperationException("Sayım başlatılmış bölgede ekip grubu değiştirilemez.");
 
-        // Mevcut grubu sil, yenisini oluştur
         if (bolge.EkipGrubu != null)
             _uow.EkipGruplari.Delete(bolge.EkipGrubu);
 
@@ -161,14 +165,21 @@ public class SayimKaydiService : ISayimKaydiService
 
     public async Task<SayimKaydiDto> AcAsync(int turId, int ekipId, string kullaniciId, CancellationToken ct = default)
     {
-        var tur = await _uow.SayimTurleri.GetWithKatilimcilarAsync(turId, ct)
+        var tur = await _uow.SayimTurlari.GetWithKatilimcilarAsync(turId, ct)
             ?? throw new KeyNotFoundException($"Tur bulunamadı: {turId}");
 
         var katilimci = tur.Katilimcilar.FirstOrDefault(k => k.EkipId == ekipId)
             ?? throw new InvalidOperationException("Bu ekip bu tura katılımcı olarak atanmamış.");
 
+        // Zaten kayıt varsa mevcut kaydı döndür (terminal yeniden bağlantı senaryosu)
         if (katilimci.SayimKaydiId.HasValue)
-            throw new InvalidOperationException("Bu ekip için zaten sayım kaydı açık.");
+        {
+            var mevcutKaydi = await _uow.SayimKayitlari.GetWithDetaylarAsync(katilimci.SayimKaydiId.Value, ct)
+                ?? throw new KeyNotFoundException($"Mevcut kayıt bulunamadı: {katilimci.SayimKaydiId}");
+            if (mevcutKaydi.Durum == SayimKaydiDurum.Tamamlandi)
+                throw new InvalidOperationException("Bu ekibin sayımı zaten tamamlanmış.");
+            return MapToDto(mevcutKaydi);
+        }
 
         var kaydi = new SayimKaydi
         {
@@ -182,16 +193,15 @@ public class SayimKaydiService : ISayimKaydiService
         };
 
         await _uow.SayimKayitlari.AddAsync(kaydi, ct);
+        // ✅ FIX: Tek SaveChanges — kaydi, katilimci ve tur güncellemesi birlikte kaydediliyor
         await _uow.SaveChangesAsync(ct);
 
         katilimci.SayimKaydiId = kaydi.Id;
-        await _uow.SaveChangesAsync(ct);
 
         if (tur.Durum == SayimTuruDurum.Beklemede)
-        {
             tur.Durum = SayimTuruDurum.DevamEdiyor;
-            await _uow.SaveChangesAsync(ct);
-        }
+
+        await _uow.SaveChangesAsync(ct);
 
         return MapToDto(kaydi);
     }
@@ -216,7 +226,8 @@ public class SayimKaydiService : ISayimKaydiService
             Notlar = request.Notlar
         };
 
-        await _uow.SayimKayitlari.AddAsync(kaydi, ct);
+        // ✅ FIX: detay kaydi'ya ekleniyor, önce kaydi tekrar Add ediliyordu
+        kaydi.Detaylar.Add(detay);
         await _uow.SaveChangesAsync(ct);
     }
 
@@ -244,6 +255,10 @@ public class SayimKaydiService : ISayimKaydiService
             .SelectMany(k => k.Detaylar)
             .FirstOrDefaultAsync(d => d.Id == detayId, ct)
             ?? throw new KeyNotFoundException($"Detay bulunamadı: {detayId}");
+
+        // ✅ FIX: detay silinip sonra SaveChanges yapılıyor, önce silme yoktu
+
+        _uow.SayimKayitlari.DeleteDetay(detay);
         await _uow.SaveChangesAsync(ct);
     }
 
@@ -392,9 +407,9 @@ public class RaporService : IRaporService
                 BolgeKodu: b.BolgeKodu,
                 BolgeAdi: b.BolgeAdi,
                 OturumDurum: oturum?.Durum.ToString() ?? "Başlamadı",
-                TamamlananTurSayisi: oturum?.SayimTurleri.Count(t => t.Durum == SayimTuruDurum.Onaylandi) ?? 0,
-                ToplamTurSayisi: oturum?.SayimTurleri.Count ?? 0,
-                ErpKarsilastirmaYapildiMi: oturum?.SayimTurleri.Any(t => t.TurTipi == SayimTuruTip.ErpKarsilastirma) ?? false
+                TamamlananTurSayisi: oturum?.SayimTurlari.Count(t => t.Durum == SayimTuruDurum.Onaylandi) ?? 0,
+                ToplamTurSayisi: oturum?.SayimTurlari.Count ?? 0,
+                ErpKarsilastirmaYapildiMi: oturum?.SayimTurlari.Any(t => t.TurTipi == SayimTuruTip.ErpKarsilastirma) ?? false
             );
         }).ToList();
 
@@ -423,7 +438,7 @@ public class RaporService : IRaporService
 
         foreach (var oturum in oturumlar)
         {
-            var erpTuru = oturum.SayimTurleri
+            var erpTuru = oturum.SayimTurlari
                 .Where(t => t.TurTipi == SayimTuruTip.ErpKarsilastirma || t.TurTipi == SayimTuruTip.ErpKontrol)
                 .OrderByDescending(t => t.TurNo)
                 .FirstOrDefault(t => t.TurSonucu != null);
@@ -473,7 +488,6 @@ public class RaporService : IRaporService
 
         using var wb = new XLWorkbook();
 
-        // Özet sayfası
         var wsOzet = wb.Worksheets.Add("Özet");
         wsOzet.Cell(1, 1).Value = "Plan";
         wsOzet.Cell(1, 2).Value = rapor.PlanAdi;
@@ -486,7 +500,6 @@ public class RaporService : IRaporService
         wsOzet.Cell(5, 1).Value = "Farklı";
         wsOzet.Cell(5, 2).Value = rapor.FarkliMalzeme;
 
-        // Bölge durumları
         var wsBolge = wb.Worksheets.Add("Bölge Durumları");
         wsBolge.Cell(1, 1).Value = "Bölge Kodu";
         wsBolge.Cell(1, 2).Value = "Bölge Adı";
@@ -502,7 +515,6 @@ public class RaporService : IRaporService
             satirNo++;
         }
 
-        // Fark detayları
         var wsFark = wb.Worksheets.Add("Fark Detayları");
         string[] basliklar = ["Malzeme Kodu", "Malzeme Adı", "Lot No", "Seri No", "Birim", "Depo Kodu", "Bölge", "ERP Miktar", "Fiili Miktar", "Fark", "Fark %", "Karar Tipi", "Manuel Karar Gerekçesi"];
         for (int i = 0; i < basliklar.Length; i++)
@@ -535,4 +547,7 @@ public class RaporService : IRaporService
     }
 }
 
-
+internal static class StringExtensions
+{
+    public static string? NullIfEmpty(this string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+}

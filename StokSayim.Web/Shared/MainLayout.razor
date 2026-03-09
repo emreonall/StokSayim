@@ -40,7 +40,11 @@
             <NavLink class="ss-nav-item" href="/raporlar">
                 <span class="nav-icon">📊</span> Raporlar
             </NavLink>
-
+            <AuthorizeView Roles="Admin,SayimSorumlusu">
+                <NavLink class="ss-nav-item" href="/simulasyon/terminal">
+                    <span class="nav-icon">🔧</span> Terminal Simülasyonu
+                </NavLink>
+            </AuthorizeView>
             <AuthorizeView Roles="Admin">
                 <div class="ss-nav-section">Yönetim</div>
                 <NavLink class="ss-nav-item" href="/admin/kullanicilar">

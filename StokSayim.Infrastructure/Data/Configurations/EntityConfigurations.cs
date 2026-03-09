@@ -73,7 +73,7 @@ public class SayimOturumuConfiguration : IEntityTypeConfiguration<SayimOturumu>
     public void Configure(EntityTypeBuilder<SayimOturumu> b)
     {
         b.HasKey(x => x.Id);
-        b.HasMany(x => x.SayimTurleri).WithOne(x => x.SayimOturumu).HasForeignKey(x => x.SayimOturumuId).OnDelete(DeleteBehavior.Cascade);
+        b.HasMany(x => x.SayimTurlari).WithOne(x => x.SayimOturumu).HasForeignKey(x => x.SayimOturumuId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(x => x.GorevBildirimleri).WithOne(x => x.SayimOturumu).HasForeignKey(x => x.SayimOturumuId).OnDelete(DeleteBehavior.Cascade);
     }
 }

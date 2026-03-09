@@ -18,7 +18,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<ErpStok> ErpStoklar => Set<ErpStok>();
     public DbSet<Bolge> Bolgeler => Set<Bolge>();
     public DbSet<SayimOturumu> SayimOturumlari => Set<SayimOturumu>();
-    public DbSet<SayimTuru> SayimTurleri => Set<SayimTuru>();
+    public DbSet<SayimTuru> SayimTurlari => Set<SayimTuru>();
     public DbSet<SayimTuruKatilimci> SayimTuruKatilimcilari => Set<SayimTuruKatilimci>();
     public DbSet<SayimKaydi> SayimKayitlari => Set<SayimKaydi>();
     public DbSet<SayimKaydiDetay> SayimKaydiDetaylari => Set<SayimKaydiDetay>();

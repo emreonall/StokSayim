@@ -72,7 +72,8 @@ public class SayimOturumuService : ISayimOturumuService
                     EkipRolu = grubuEkip.EkipRolu,
                     OlusturanKullaniciId = kullaniciId
                 };
-                await _uow.SayimTurleri.AddAsync(tur, ct); // SayimTuruKatilimci için extend edilmeli
+                //  katilimci tur'a ekleniyor, tur tekrar Add edilmiyordu
+                tur.Katilimcilar.Add(katilimci);
             }
 
             await _uow.SaveChangesAsync(ct);
@@ -106,7 +107,7 @@ public class SayimOturumuService : ISayimOturumuService
         var oturum = await _uow.SayimOturumlari.GetWithTurlerAsync(oturumuId, ct)
             ?? throw new KeyNotFoundException($"Oturum bulunamadı: {oturumuId}");
 
-        var sonTur = oturum.SayimTurleri.OrderByDescending(t => t.TurNo).First();
+        var sonTur = oturum.SayimTurlari.OrderByDescending(t => t.TurNo).First();
         if (sonTur.Durum != SayimTuruDurum.FarkVar)
             throw new InvalidOperationException("Kontrol turu sadece fark olan turdan sonra açılabilir.");
 
@@ -131,6 +132,8 @@ public class SayimOturumuService : ISayimOturumuService
                     EkipRolu = ekipDto.EkipRolu,
                     OlusturanKullaniciId = kullaniciId
                 };
+                // ✅ FIX: katilimci yeniTur'a ekleniyor, önce hiç eklenmiyordu
+                yeniTur.Katilimcilar.Add(katilimci);
             }
 
             // Bildirimi işle
@@ -162,6 +165,7 @@ public class SayimOturumuService : ISayimOturumuService
             .FirstOrDefaultAsync(d => d.Id == turSonucuDetayId, ct)
             ?? throw new KeyNotFoundException($"TurSonucuDetay bulunamadı: {turSonucuDetayId}");
 
+        // ✅ FIX: karar oluşturulup detay'a atanıyor
         var karar = new ManuelKarar
         {
             TurSonucuDetayId = turSonucuDetayId,
@@ -174,6 +178,7 @@ public class SayimOturumuService : ISayimOturumuService
             KararTarihi = DateTime.UtcNow,
             OlusturanKullaniciId = kullaniciId
         };
+        detay.ManuelKarar = karar;
 
         detay.OnaylananDeger = request.KararVerilenDeger;
         detay.KararTipi = KararTipi.Manuel;
@@ -198,7 +203,7 @@ public class SayimOturumuService : ISayimOturumuService
         {
             foreach (var oturum in oturumlar)
             {
-                var sonTur = oturum.SayimTurleri.OrderByDescending(t => t.TurNo).First();
+                var sonTur = oturum.SayimTurlari.OrderByDescending(t => t.TurNo).First();
                 var sonSonuc = sonTur.TurSonucu;
                 if (sonSonuc == null) continue;
 
@@ -233,33 +238,27 @@ public class SayimOturumuService : ISayimOturumuService
             OlusturanKullaniciId = kullaniciId
         };
 
-        await _uow.SayimTurleri.AddAsync(tur, ct);
+        await _uow.SayimTurlari.AddAsync(tur, ct);
         await _uow.SaveChangesAsync(ct);
         return tur;
     }
 
     public async Task HesaplaKarsilastirmaAsync(int turId, CancellationToken ct = default)
     {
-        var tur = await _uow.SayimTurleri.GetWithKatilimcilarAsync(turId, ct)
+        var tur = await _uow.SayimTurlari.GetWithKatilimcilarAsync(turId, ct)
             ?? throw new KeyNotFoundException($"Tur bulunamadı: {turId}");
 
-        // Tüm katılımcılar tamamladı mı?
         var tamamlanmamisKatilimci = tur.Katilimcilar.Any(k => k.SayimKaydiId == null);
         if (tamamlanmamisKatilimci)
             throw new InvalidOperationException("Tüm ekipler sayımını tamamlamadan karşılaştırma yapılamaz.");
 
         var kayitlar = await _uow.SayimKayitlari.GetByTurIdAsync(turId, ct);
 
-        // Malzeme bazında grupla ve karşılaştır
         var tumDetaylar = kayitlar.SelectMany(k => k.Detaylar).ToList();
-        var gruplar = tumDetaylar
-            .GroupBy(d => new { d.MalzemeKodu, LotNo = d.LotNo ?? "", SeriNo = d.SeriNo ?? "" })
-            .ToList();
 
         var sonucDetaylar = new List<TurSonucuDetay>();
         var farkVar = false;
 
-        // Ekip bazında kayıtları al
         var ekipKayitlari = kayitlar.ToDictionary(k => k.EkipRolu, k => k.Detaylar);
 
         var tumMalzemeler = tumDetaylar
@@ -282,7 +281,7 @@ public class SayimOturumuService : ISayimOturumuService
                          .Sum(d => d.SayilanMiktar)
                     : (decimal?)null;
 
-            var fark = deger1.HasValue && deger2.HasValue ? deger1.Value - deger2.Value :(decimal?) null;
+            var fark = deger1.HasValue && deger2.HasValue ? deger1.Value - deger2.Value : (decimal?)null;
             var farkYuzdesi = deger1.HasValue && deger2.HasValue && deger1.Value != 0
                 ? Math.Abs(fark!.Value / deger1.Value * 100)
                 : (decimal?)null;
@@ -307,6 +306,7 @@ public class SayimOturumuService : ISayimOturumuService
             });
         }
 
+        //  turSonucu oluşturulup tur'a atanıyor, önce atanmıyordu
         var turSonucu = new TurSonucu
         {
             SayimTuruId = turId,
@@ -316,17 +316,16 @@ public class SayimOturumuService : ISayimOturumuService
             GenelDurum = farkVar ? SayimTuruDurum.FarkVar : SayimTuruDurum.Onaylandi,
             Detaylar = sonucDetaylar
         };
+        tur.TurSonucu = turSonucu;
 
         tur.Durum = farkVar ? SayimTuruDurum.FarkVar : SayimTuruDurum.Onaylandi;
         tur.KapanmaTarihi = farkVar ? null : DateTime.UtcNow;
 
-        // Oturum durumunu güncelle
         var oturum = await _uow.SayimOturumlari.GetByIdAsync(tur.SayimOturumuId, ct)!;
         if (!farkVar)
             oturum!.Durum = SayimOturumuDurum.Onaylandi;
         else
         {
-            // Bildirim oluştur
             var bildirim = new GorevBildirimi
             {
                 SayimOturumuId = tur.SayimOturumuId,
@@ -368,8 +367,8 @@ public class SayimOturumuService : ISayimOturumuService
                 LotNo = fiiliDetay.LotNo,
                 SeriNo = fiiliDetay.SeriNo,
                 Birim = fiiliDetay.Birim,
-                Deger1 = erpMiktar,      // Deger1 = ERP
-                Deger2 = fiiliMiktar,    // Deger2 = Fiili
+                Deger1 = erpMiktar,
+                Deger2 = fiiliMiktar,
                 Fark = fark,
                 FarkYuzdesi = erpMiktar != 0 ? Math.Abs(fark / erpMiktar * 100) : null,
                 Durum = durum,
@@ -377,6 +376,18 @@ public class SayimOturumuService : ISayimOturumuService
                 KararTipi = durum == TurSonucuDetayDurum.Eslesti ? KararTipi.Otomatik : null
             });
         }
+
+        // ✅ FIX: turSonucu oluşturulup tur'a atanıyor, önce hiç atanmıyordu
+        var turSonucu = new TurSonucu
+        {
+            SayimTuruId = tur.Id,
+            ToplamMalzemeSayisi = sonucDetaylar.Count,
+            EslesilenSayisi = sonucDetaylar.Count(d => d.Durum == TurSonucuDetayDurum.Eslesti),
+            FarkliSayisi = sonucDetaylar.Count(d => d.Durum == TurSonucuDetayDurum.FarkVar),
+            GenelDurum = farkVar ? SayimTuruDurum.FarkVar : SayimTuruDurum.Onaylandi,
+            Detaylar = sonucDetaylar
+        };
+        tur.TurSonucu = turSonucu;
 
         tur.Durum = farkVar ? SayimTuruDurum.FarkVar : SayimTuruDurum.Onaylandi;
 
@@ -405,7 +416,7 @@ public class SayimOturumuService : ISayimOturumuService
         AktifTurNo: oturum.AktifTurNo,
         BaslangicTarihi: oturum.BaslangicTarihi,
         KapanisTarihi: oturum.KapanisTarihi,
-        Turler: oturum.SayimTurleri.OrderBy(t => t.TurNo).Select(t => new SayimTuruOzetDto(
+        Turler: oturum.SayimTurlari.OrderBy(t => t.TurNo).Select(t => new SayimTuruOzetDto(
             Id: t.Id,
             TurNo: t.TurNo,
             TurTipi: t.TurTipi,
@@ -431,8 +442,4 @@ public class SayimOturumuService : ISayimOturumuService
             )
         ))
     );
-
- 
 }
-
-

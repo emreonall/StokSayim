@@ -1,0 +1,243 @@
+@page "/raporlar"
+@page "/raporlar/{PlanId:int}"
+@attribute [Authorize(Roles = "Admin,SayimSorumlusu")]
+@inject ISayimPlaniHttpService PlanService
+@inject IRaporHttpService RaporService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Raporlar</PageTitle>
+
+<div class="ss-page-header">
+    <div>
+        <h1 class="ss-page-title">Raporlar</h1>
+        <p class="ss-page-subtitle">Sayım durum ve fark raporları</p>
+    </div>
+</div>
+
+<div class="ss-card" style="margin-bottom:16px">
+    <div style="display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap">
+        <div class="ss-form-group" style="flex:1; min-width:200px; margin-bottom:0">
+            <label>Plan Seç</label>
+            <SfDropDownList DataSource="@_planlar" @bind-Value="_secilenPlanId"
+                            TValue="int" TItem="SayimPlaniListDto"
+                            Placeholder="Rapor için plan seçin...">
+                <DropDownListFieldSettings Value="Id" Text="PlanAdi"></DropDownListFieldSettings>
+                <DropDownListEvents TValue="int" TItem="SayimPlaniListDto"
+                                    ValueChange="@(async e => { _secilenPlanId = (int)(e.Value); await YukleRaporlar(); })">
+                </DropDownListEvents>
+            </SfDropDownList>
+        </div>
+        @if (_secilenPlanId > 0)
+        {
+            <SfButton CssClass="e-success" Disabled="@_exportYukleniyor" @onclick="ExcelExport">
+                @(_exportYukleniyor ? "Hazırlanıyor..." : "📥 Excel İndir")
+            </SfButton>
+        }
+    </div>
+</div>
+
+@if (_secilenPlanId == 0)
+{
+    <div class="ss-empty"><div class="ss-empty-icon">📊</div><div class="ss-empty-text">Plan seçin</div></div>
+}
+else if (_raporYukleniyor)
+{
+    <div class="ss-loading"><SfSpinner Visible="true" /> Rapor hazırlanıyor...</div>
+}
+else
+{
+    @if (_durumRaporu != null)
+    {
+        <!-- İstatistikler -->
+        <div class="ss-stats">
+            <div class="ss-stat primary">
+                <div class="ss-stat-label">Toplam Bölge</div>
+                <div class="ss-stat-value">@_durumRaporu.ToplamBolge</div>
+            </div>
+            <div class="ss-stat success">
+                <div class="ss-stat-label">Tamamlanan</div>
+                <div class="ss-stat-value">@_durumRaporu.TamamlananBolge</div>
+            </div>
+            <div class="ss-stat">
+                <div class="ss-stat-label">Devam Eden</div>
+                <div class="ss-stat-value">@_durumRaporu.DevamEdenBolge</div>
+            </div>
+            <div class="ss-stat warn">
+                <div class="ss-stat-label">Bekleyen</div>
+                <div class="ss-stat-value">@_durumRaporu.BekleyenBolge</div>
+            </div>
+        </div>
+
+        <!-- Bölge Durumları -->
+        <div class="ss-card">
+            <div class="ss-card-title">Bölge Bazında Sayım Durumu</div>
+            <SfGrid DataSource="@_durumRaporu.BolgeDurumlari" AllowPaging="true" AllowSorting="true">
+                <GridPageSettings PageSize="15" />
+                <GridColumns>
+                    <GridColumn Field="BolgeKodu" HeaderText="Kod" Width="100" />
+                    <GridColumn Field="BolgeAdi" HeaderText="Bölge Adı" Width="200" />
+                    <GridColumn Field="OturumDurum" HeaderText="Durum" Width="140">
+                        <Template>
+                            @{
+                                var b = (BolgeDurumDto)context;
+                                var (cls, txt) = b.OturumDurum switch
+                                {
+                                    "Onaylandi" or "ManuelKarar" => ("ss-badge-success", b.OturumDurum),
+                                    "DevamEdiyor" => ("ss-badge-accent", "Devam Ediyor"),
+                                    _ => ("ss-badge-muted", "Başlamadı")
+                                };
+                            }
+                            <span class="ss-badge @cls">@txt</span>
+                        </Template>
+                    </GridColumn>
+                    <GridColumn HeaderText="Tur İlerleme" Width="160" TextAlign="TextAlign.Center">
+                        <Template>
+                            @{
+                                var b = (BolgeDurumDto)context;
+                                var pct = b.ToplamTurSayisi == 0 ? 0 : (int)((double)b.TamamlananTurSayisi / b.ToplamTurSayisi * 100);
+                            }
+                            <span>@b.TamamlananTurSayisi/@b.ToplamTurSayisi tur (%@pct)</span>
+                        </Template>
+                    </GridColumn>
+                    <GridColumn Field="ErpKarsilastirmaYapildiMi" HeaderText="ERP Karş." Width="110" TextAlign="TextAlign.Center">
+                        <Template>
+                            @{
+                                var b = (BolgeDurumDto)context;
+                            }
+                            <span>@(b.ErpKarsilastirmaYapildiMi ? "✅" : "—")</span>
+                        </Template>
+                    </GridColumn>
+                </GridColumns>
+            </SfGrid>
+        </div>
+
+        <!-- Ekip Sayım Özeti -->
+        @if (_durumRaporu.EkipSayimOzetleri.Any())
+        {
+            <div class="ss-card">
+                <div class="ss-card-title">Ekip Bazında Sayım Özeti</div>
+                <SfGrid DataSource="@_durumRaporu.EkipSayimOzetleri" AllowSorting="true">
+                    <GridColumns>
+                        <GridColumn Field="EkipAdi" HeaderText="Ekip" Width="200" />
+                        <GridColumn Field="TamamlananSayimSayisi" HeaderText="Tamamlanan" Width="130" TextAlign="TextAlign.Center" />
+                        <GridColumn Field="ToplamSayimSayisi" HeaderText="Toplam" Width="100" TextAlign="TextAlign.Center" />
+                    </GridColumns>
+                </SfGrid>
+            </div>
+        }
+    }
+
+    @if (_farkRaporu != null && _farkRaporu.FarkDetaylari.Any())
+    {
+        <!-- Fark Raporu -->
+        <div class="ss-card">
+            <div class="ss-card-title">Kesin Fark Raporu</div>
+            <div class="ss-stats" style="margin-bottom:16px">
+                <div class="ss-stat">
+                    <div class="ss-stat-label">Toplam Malzeme</div>
+                    <div class="ss-stat-value">@_farkRaporu.ToplamMalzeme.ToString("N0")</div>
+                </div>
+                <div class="ss-stat success">
+                    <div class="ss-stat-label">Farksız</div>
+                    <div class="ss-stat-value">@_farkRaporu.FarksizMalzeme.ToString("N0")</div>
+                </div>
+                <div class="ss-stat danger">
+                    <div class="ss-stat-label">Farklı</div>
+                    <div class="ss-stat-value">@_farkRaporu.FarkliMalzeme.ToString("N0")</div>
+                </div>
+            </div>
+
+            <SfGrid DataSource="@_farkRaporu.FarkDetaylari" AllowPaging="true" AllowSorting="true" AllowFiltering="true">
+                <GridFilterSettings Type="Syncfusion.Blazor.Grids.FilterType.Menu" />
+                <GridPageSettings PageSize="20" />
+                <GridColumns>
+                    <GridColumn Field="MalzemeKodu" HeaderText="Malzeme Kodu" Width="130" />
+                    <GridColumn Field="MalzemeAdi" HeaderText="Malzeme Adı" Width="200" />
+                    <GridColumn Field="LotNo" HeaderText="Lot No" Width="100" />
+                    <GridColumn Field="BolgeAdi" HeaderText="Bölge" Width="150" />
+                    <GridColumn Field="DepoKodu" HeaderText="Depo" Width="90" />
+                    <GridColumn Field="ErpMiktar" HeaderText="ERP" Format="N2" Width="100" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="FiiliMiktar" HeaderText="Fiili" Format="N2" Width="100" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="Fark" HeaderText="Fark" Width="100" TextAlign="TextAlign.Right">
+                        <Template>
+                            @{
+                                var f = (FarkDetayDto)context;
+                            }
+                            <span style="color:@(f.Fark > 0 ? "var(--success)" : "var(--danger)"); font-weight:600">
+                                @f.Fark.ToString("N2")
+                            </span>
+                        </Template>
+                    </GridColumn>
+                    <GridColumn Field="FarkYuzdesi" HeaderText="Fark %" Format="N1" Width="90" TextAlign="TextAlign.Right" />
+                    <GridColumn HeaderText="Karar" Width="110">
+                        <Template>
+                            @{
+                                var f = (FarkDetayDto)context;
+                            }
+                            @if (f.KararTipi == KararTipi.Manuel)
+                            {
+                                <span class="ss-badge ss-badge-warn" title="@f.ManuelKararGerekce">⚖️ Manuel</span>
+                            }
+                            else
+                            {
+                                <span class="ss-badge ss-badge-muted">Otomatik</span>
+                            }
+                        </Template>
+                    </GridColumn>
+                </GridColumns>
+            </SfGrid>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public int PlanId { get; set; }
+
+    private IEnumerable<SayimPlaniListDto> _planlar = [];
+    private int _secilenPlanId;
+    private bool _raporYukleniyor = false;
+    private bool _exportYukleniyor = false;
+    private SayimDurumRaporDto? _durumRaporu;
+    private KesinFarkRaporDto? _farkRaporu;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _planlar = await PlanService.GetAllAsync();
+        if (PlanId > 0)
+        {
+            _secilenPlanId = PlanId;
+            await YukleRaporlar();
+        }
+    }
+
+    private async Task YukleRaporlar()
+    {
+        if (_secilenPlanId == 0) return;
+        _raporYukleniyor = true;
+        try
+        {
+            _durumRaporu = await RaporService.GetDurumRaporuAsync(_secilenPlanId);
+            _farkRaporu = await RaporService.GetKesinFarkRaporuAsync(_secilenPlanId);
+        }
+        catch { }
+        _raporYukleniyor = false;
+    }
+
+    private async Task ExcelExport()
+    {
+        _exportYukleniyor = true;
+        try
+        {
+            var bytes = await RaporService.ExportExcelAsync(_secilenPlanId);
+            if (bytes != null)
+            {
+                var b64 = Convert.ToBase64String(bytes);
+                await JS.InvokeVoidAsync("downloadFile", b64, $"FarkRaporu_{_secilenPlanId}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            }
+        }
+        catch { }
+        finally { _exportYukleniyor = false; }
+    }
+}

@@ -1,0 +1,339 @@
+@page "/bolgeler/{Id:int}"
+@attribute [Authorize]
+@inject IBolgeHttpService BolgeService
+@inject IEkipHttpService EkipService
+@inject ISayimOturumuHttpService OturumuService
+@inject NavigationManager Nav
+
+<PageTitle>Bölge Detayı</PageTitle>
+
+@if (_yukleniyor)
+{
+    <div class="ss-loading"><SfSpinner Visible="true" /> Yükleniyor...</div>
+}
+else if (_bolge == null)
+{
+    <div class="ss-alert ss-alert-danger">Bölge bulunamadı.</div>
+}
+else
+{
+    <div class="ss-page-header">
+        <div>
+            <h1 class="ss-page-title">@_bolge.BolgeAdi</h1>
+            <p class="ss-page-subtitle">@_bolge.BolgeKodu @(_bolge.Aciklama != null ? "· " + _bolge.Aciklama : "")</p>
+        </div>
+        <div style="display:flex; gap:8px">
+            <SfButton CssClass="e-outline" @onclick="@(() => Nav.NavigateTo($"/sayim-planlari/{_bolge.SayimPlaniId}"))">
+                ← Plana Dön
+            </SfButton>
+            @if (_bolge.SayimOturumu == null && _bolge.EkipGrubu != null)
+            {
+                <AuthorizeView Roles="Admin,SayimSorumlusu">
+                    <SfButton CssClass="e-primary" @onclick="SayimBaslat">
+                        ▶ Sayım Başlat
+                    </SfButton>
+                </AuthorizeView>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_mesaj))
+    {
+        <div class="ss-alert @(_hata ? "ss-alert-danger" : "ss-alert-success")">@_mesaj</div>
+    }
+
+    <div class="ss-grid-2">
+        <!-- Ekip Grubu -->
+        <div class="ss-card">
+            <div class="ss-card-title">Ekip Grubu</div>
+            @if (_bolge.EkipGrubu == null)
+            {
+                <div class="ss-alert ss-alert-warn">Bu bölgeye henüz ekip atanmamış.</div>
+                <AuthorizeView Roles="Admin,SayimSorumlusu">
+                    <SfButton CssClass="e-primary" @onclick="EkipGrubuDialogAc">
+                        + Ekip Grubu Ata
+                    </SfButton>
+                </AuthorizeView>
+            }
+            else
+            {
+                <div style="font-weight:600; margin-bottom:12px">@_bolge.EkipGrubu.EkipGrubuAdi</div>
+                <table style="width:100%; border-collapse:collapse">
+                    <thead>
+                        <tr style="background:var(--bg)">
+                            <th style="padding:8px; text-align:left; font-size:11px; color:var(--muted)">Sıra</th>
+                            <th style="padding:8px; text-align:left; font-size:11px; color:var(--muted)">Ekip</th>
+                            <th style="padding:8px; text-align:left; font-size:11px; color:var(--muted)">Rol</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var e in _bolge.EkipGrubu.Ekipler.OrderBy(x => x.SiraNo))
+                        {
+                            <tr style="border-top:1px solid var(--border)">
+                                <td style="padding:8px">@e.SiraNo</td>
+                                <td style="padding:8px; font-weight:600">@e.EkipAdi</td>
+                                <td style="padding:8px">
+                                    <span class="ss-badge @(e.EkipRolu == EkipRolu.Birinci ? "ss-badge-primary" : e.EkipRolu == EkipRolu.Ikinci ? "ss-badge-accent" : "ss-badge-warn")">
+                                        @e.EkipRoluAdi
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @if (_bolge.SayimOturumu == null)
+                {
+                    <AuthorizeView Roles="Admin,SayimSorumlusu">
+                        <SfButton CssClass="e-outline e-small" style="margin-top:12px" @onclick="EkipGrubuDialogAc">
+                            ✏️ Değiştir
+                        </SfButton>
+                    </AuthorizeView>
+                }
+            }
+        </div>
+
+        <!-- Sayım Durumu -->
+        <div class="ss-card">
+            <div class="ss-card-title">Sayım Durumu</div>
+            @if (_bolge.SayimOturumu == null)
+            {
+                <div class="ss-empty">
+                    <div class="ss-empty-icon">⏳</div>
+                    <div class="ss-empty-text">Sayım henüz başlamadı</div>
+                </div>
+            }
+            else
+            {
+                var o = _bolge.SayimOturumu;
+                <table style="width:100%; border-collapse:collapse; margin-bottom:16px">
+                    <tr>
+                        <td style="padding:6px 0; color:var(--muted); width:120px">Durum</td>
+                        <td><span class="ss-badge @OturumDurumCls(o.Durum)">@o.DurumAdi</span></td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0; color:var(--muted)">Aktif Tur</td>
+                        <td style="font-weight:600">Tur @o.AktifTurNo</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0; color:var(--muted)">Tur Tipi</td>
+                        <td>@(o.AktifTurTipi ?? "—")</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0; color:var(--muted)">Başlangıç</td>
+                        <td>@(o.BaslangicTarihi?.ToString("dd.MM.yyyy HH:mm") ?? "—")</td>
+                    </tr>
+                </table>
+            }
+        </div>
+    </div>
+
+    <!-- Tur Timeline -->
+    @if (_oturum != null && _oturum.Turler.Any())
+    {
+        <div class="ss-card">
+            <div class="ss-card-title">Sayım Turları</div>
+            <div class="ss-timeline">
+                @foreach (var tur in _oturum.Turler.OrderBy(t => t.TurNo))
+                {
+                    var dotCls = tur.Durum == SayimTuruDurum.Onaylandi ? "done" :
+                                 tur.Durum == SayimTuruDurum.FarkVar || tur.Durum == SayimTuruDurum.ManuelKarar ? "error" : "active";
+                    <div class="ss-timeline-item">
+                        <div class="ss-timeline-dot @dotCls"></div>
+                        <div class="ss-timeline-content">
+                            <div class="ss-timeline-header">
+                                <div class="ss-timeline-title">Tur @tur.TurNo — @tur.TurTipiAdi</div>
+                                <span class="ss-badge @TurDurumCls(tur.Durum)">@tur.DurumAdi</span>
+                            </div>
+                            <div class="ss-timeline-meta">
+                                @if (tur.AcilamaTarihi.HasValue)
+                                {
+                                    <span>Açıldı: @tur.AcilamaTarihi.Value.ToString("dd.MM.yyyy HH:mm")</span>
+                                }
+                                @if (tur.KapanmaTarihi.HasValue)
+                                {
+                                    <span style="margin-left:12px">Kapandı: @tur.KapanmaTarihi.Value.ToString("dd.MM.yyyy HH:mm")</span>
+                                }
+                            </div>
+                            <!-- Katılımcılar -->
+                            <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap">
+                                @foreach (var k in tur.Katilimcilar)
+                                {
+                                    <span class="ss-badge @(k.SayimTamamlandi ? "ss-badge-success" : "ss-badge-warn")">
+                                        @k.EkipAdi (@k.EkipRoluAdi) @(k.SayimTamamlandi ? "✓" : "⏳")
+                                    </span>
+                                }
+                            </div>
+                            <!-- Sonuç -->
+                            @if (tur.Sonuc != null)
+                            {
+                                <div style="margin-top:8px; padding:8px; background:var(--bg); border-radius:6px; font-size:12px">
+                                    <strong>Sonuç:</strong> @tur.Sonuc.ToplamMalzeme malzeme,
+                                    <span style="color:var(--success)">@tur.Sonuc.Eslesen eşleşti</span>,
+                                    <span style="color:var(--danger)">@tur.Sonuc.Farkli farklı</span>
+                                    <SfButton CssClass="e-small e-flat" style="margin-left:8px"
+                                              @onclick="@(() => Nav.NavigateTo($"/tur-sonucu/{tur.Id}"))">
+                                        Detay →
+                                    </SfButton>
+                                </div>
+                            }
+                            <!-- Karşılaştırma Butonu -->
+                            @if (tur.Durum == SayimTuruDurum.KarsilastirmaBekliyor)
+                            {
+                                <AuthorizeView Roles="Admin,SayimSorumlusu">
+                                    <SfButton CssClass="e-primary e-small" style="margin-top:8px"
+                                              @onclick="@(async () => await HesaplaKarsilastirma(tur.Id))">
+                                        ⚖️ Karşılaştır
+                                    </SfButton>
+                                </AuthorizeView>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+}
+
+<!-- Ekip Grubu Atama Dialog -->
+<SfDialog @bind-Visible="_ekipGrubuDialogAcik" Header="Ekip Grubu Ata" Width="520px" ShowCloseIcon="true">
+    <DialogTemplates>
+        <Content>
+            <div class="ss-form-group">
+                <label>Grup Adı *</label>
+                <SfTextBox @bind-Value="_grupAdi" Placeholder="Örn: Zemin Kat Ekibi" />
+            </div>
+            <hr class="ss-divider" />
+            <div style="font-size:13px; font-weight:600; margin-bottom:12px">Ekipler</div>
+            @foreach (var satir in _ekipSatirlari)
+            {
+                <div style="display:flex; gap:8px; align-items:flex-end; margin-bottom:8px">
+                    <div class="ss-form-group" style="flex:1; margin-bottom:0">
+                        <label>Ekip</label>
+                        <SfDropDownList DataSource="@_tumEkipler" @bind-Value="satir.EkipId"
+                                        TValue="int" TItem="EkipDto">
+                            <DropDownListFieldSettings Value="Id" Text="EkipAdi"></DropDownListFieldSettings>
+                        </SfDropDownList>
+                    </div>
+                    <div class="ss-form-group" style="width:120px; margin-bottom:0">
+                        <label>Rol</label>
+                        <SfDropDownList DataSource="@_roller" @bind-Value="satir.Rol"
+                                        TValue="EkipRolu" TItem="RolItem">
+                            <DropDownListFieldSettings Value="Deger" Text="Ad"></DropDownListFieldSettings>
+                        </SfDropDownList>
+                    </div>
+                    <SfButton CssClass="e-outline e-small" style="color:var(--danger)"
+                              @onclick="@(() => _ekipSatirlari.Remove(satir))">×</SfButton>
+                </div>
+            }
+            <SfButton CssClass="e-outline e-small" @onclick="EkipSatirEkle">+ Ekip Ekle</SfButton>
+        </Content>
+        <FooterTemplate>
+            <SfButton CssClass="e-outline" @onclick="@(() => _ekipGrubuDialogAcik = false)">İptal</SfButton>
+            <SfButton CssClass="e-primary" @onclick="EkipGrubuKaydet">Kaydet</SfButton>
+        </FooterTemplate>
+    </DialogTemplates>
+</SfDialog>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private bool _yukleniyor = true;
+    private BolgeDetayDto? _bolge;
+    private SayimOturumuDetayDto? _oturum;
+    private string _mesaj = "";
+    private bool _hata = false;
+
+    // Ekip grubu dialog
+    private bool _ekipGrubuDialogAcik = false;
+    private string _grupAdi = "";
+    private List<EkipDto> _tumEkipler = [];
+    private List<EkipSatir> _ekipSatirlari = [];
+    private List<RolItem> _roller = [
+        new(EkipRolu.Birinci, "Birinci"),
+        new(EkipRolu.Ikinci, "İkinci"),
+        new(EkipRolu.Kontrol, "Kontrol")
+    ];
+
+    record EkipSatir { public int EkipId { get; set; } public EkipRolu Rol { get; set; } }
+    record RolItem(EkipRolu Deger, string Ad);
+
+    protected override async Task OnInitializedAsync() => await Yukle();
+
+    private async Task Yukle()
+    {
+        _yukleniyor = true;
+        _bolge = await BolgeService.GetByIdAsync(Id);
+        if (_bolge?.SayimOturumu != null)
+            _oturum = await OturumuService.GetByBolgeAsync(Id);
+        _yukleniyor = false;
+    }
+
+    private async Task SayimBaslat()
+    {
+        try
+        {
+            await OturumuService.BaslatAsync(Id);
+            _mesaj = "Sayım başlatıldı."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+    }
+
+    private async Task HesaplaKarsilastirma(int turId)
+    {
+        try
+        {
+            await OturumuService.HesaplaKarsilastirmaAsync(turId);
+            _mesaj = "Karşılaştırma tamamlandı."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+    }
+
+    private async Task EkipGrubuDialogAc()
+    {
+        _tumEkipler = (await EkipService.GetAllAsync()).ToList();
+        _grupAdi = _bolge?.EkipGrubu?.EkipGrubuAdi ?? "";
+        _ekipSatirlari = _bolge?.EkipGrubu?.Ekipler
+            .Select(e => new EkipSatir { EkipId = e.EkipId, Rol = e.EkipRolu }).ToList()
+            ?? [new EkipSatir { Rol = EkipRolu.Birinci }, new EkipSatir { Rol = EkipRolu.Ikinci }];
+        _ekipGrubuDialogAcik = true;
+    }
+
+    private void EkipSatirEkle() => _ekipSatirlari.Add(new EkipSatir { Rol = EkipRolu.Kontrol });
+
+    private async Task EkipGrubuKaydet()
+    {
+        if (string.IsNullOrWhiteSpace(_grupAdi)) { _mesaj = "Grup adı zorunludur."; _hata = true; return; }
+        if (!_ekipSatirlari.Any()) { _mesaj = "En az bir ekip gerekli."; _hata = true; return; }
+
+        var dto = new EkipGrubuAtaDto(_grupAdi,
+            _ekipSatirlari.Select((e, i) => new EkipGrubuEkipAtaDto(e.EkipId, i + 1, e.Rol)));
+
+        try
+        {
+            await BolgeService.EkipGrubuAtaAsync(Id, dto);
+            _ekipGrubuDialogAcik = false;
+            _mesaj = "Ekip grubu kaydedildi."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+    }
+
+    private string OturumDurumCls(SayimOturumuDurum d) => d switch
+    {
+        SayimOturumuDurum.DevamEdiyor => "ss-badge-accent",
+        SayimOturumuDurum.Onaylandi => "ss-badge-success",
+        SayimOturumuDurum.ManuelKarar => "ss-badge-warn",
+        _ => "ss-badge-muted"
+    };
+
+    private string TurDurumCls(SayimTuruDurum d) => d switch
+    {
+        SayimTuruDurum.Onaylandi => "ss-badge-success",
+        SayimTuruDurum.FarkVar => "ss-badge-danger",
+        SayimTuruDurum.DevamEdiyor => "ss-badge-accent",
+        SayimTuruDurum.KarsilastirmaBekliyor => "ss-badge-warn",
+        _ => "ss-badge-muted"
+    };
+}

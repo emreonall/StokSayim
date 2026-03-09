@@ -1,0 +1,89 @@
+@page "/sayim-planlari"
+@attribute [Authorize]
+@inject ISayimPlaniHttpService PlanService
+@inject NavigationManager Nav
+
+<PageTitle>Sayım Planları</PageTitle>
+
+<div class="ss-page-header">
+    <div>
+        <h1 class="ss-page-title">Sayım Planları</h1>
+        <p class="ss-page-subtitle">@_planlar.Count() plan listeleniyor</p>
+    </div>
+    <AuthorizeView Roles="Admin,SayimSorumlusu">
+        <SfButton CssClass="e-primary" @onclick="@(() => Nav.NavigateTo("/sayim-planlari/yeni"))">
+            + Yeni Plan
+        </SfButton>
+    </AuthorizeView>
+</div>
+
+@if (_yukleniyor)
+{
+    <div class="ss-loading"><SfSpinner Visible="true" /> Yükleniyor...</div>
+}
+else
+{
+    <div class="ss-card">
+        <SfGrid DataSource="@_planlar" AllowPaging="true" AllowSorting="true" AllowFiltering="true">
+            <GridFilterSettings Type="Syncfusion.Blazor.Grids.FilterType.Menu" />
+            <GridPageSettings PageSize="15" />
+            <GridColumns>
+                <GridColumn Field="PlanAdi" HeaderText="Plan Adı" Width="220" />
+                <GridColumn Field="BaslangicTarihi" HeaderText="Başlangıç" Format="dd.MM.yyyy" Width="120" />
+                <GridColumn Field="BitisTarihi" HeaderText="Bitiş" Format="dd.MM.yyyy" Width="120" />
+                <GridColumn Field="BolgeSayisi" HeaderText="Bölge" Width="80" TextAlign="TextAlign.Center" />
+                <GridColumn Field="TamamlananBolgeSayisi" HeaderText="Tamamlanan" Width="110" TextAlign="TextAlign.Center" />
+                <GridColumn Field="ErpStokSatirSayisi" HeaderText="ERP Satır" Width="100" TextAlign="TextAlign.Center" />
+                <GridColumn HeaderText="Durum" Width="140">
+                    <Template>
+                        @{
+                            var p = (SayimPlaniListDto)context;
+                            var (cls, txt) = DurumBilgi(p.Durum);
+                        }
+                        <span class="ss-badge @cls">@txt</span>
+                    </Template>
+                </GridColumn>
+                <GridColumn Field="OlusturmaTarihi" HeaderText="Oluşturulma" Format="dd.MM.yyyy" Width="120" />
+                <GridColumn HeaderText="İşlemler" Width="180" TextAlign="TextAlign.Center">
+                    <Template>
+                        @{
+                            var p = (SayimPlaniListDto)context;
+                        }
+                        <SfButton CssClass="e-small e-outline" style="margin-right:4px"
+                                  @onclick="@(() => Nav.NavigateTo($"/sayim-planlari/{p.Id}"))">
+                            Detay
+                        </SfButton>
+                        @if (p.Durum == SayimPlaniDurum.Aktif)
+                        {
+                            <SfButton CssClass="e-small e-outline"
+                                      @onclick="@(() => Nav.NavigateTo($"/sayim-takip/{p.Id}"))">
+                                Takip
+                            </SfButton>
+                        }
+                    </Template>
+                </GridColumn>
+            </GridColumns>
+        </SfGrid>
+    </div>
+}
+
+@code {
+    private bool _yukleniyor = true;
+    private IEnumerable<SayimPlaniListDto> _planlar = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _planlar = await PlanService.GetAllAsync();
+        _yukleniyor = false;
+    }
+
+    private (string cls, string txt) DurumBilgi(SayimPlaniDurum d) => d switch
+    {
+        SayimPlaniDurum.Taslak => ("ss-badge-muted", "Taslak"),
+        SayimPlaniDurum.Aktif => ("ss-badge-accent", "Aktif"),
+        SayimPlaniDurum.SayimTamamlandi => ("ss-badge-primary", "Sayım Bitti"),
+        SayimPlaniDurum.ErpKarsilastirmaAktif => ("ss-badge-warn", "ERP Karş."),
+        SayimPlaniDurum.Kapali => ("ss-badge-success", "Kapalı"),
+        _ => ("ss-badge-muted", d.ToString())
+    };
+}

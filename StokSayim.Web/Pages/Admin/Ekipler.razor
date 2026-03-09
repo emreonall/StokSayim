@@ -1,0 +1,188 @@
+@page "/admin/ekipler"
+@attribute [Authorize(Roles = "Admin")]
+@inject IEkipHttpService EkipService
+@inject IKullaniciHttpService KullaniciService
+
+<PageTitle>Ekipler</PageTitle>
+
+<div class="ss-page-header">
+    <div>
+        <h1 class="ss-page-title">Ekipler</h1>
+        <p class="ss-page-subtitle">Sayım ekiplerini yönetin</p>
+    </div>
+    <SfButton CssClass="e-primary" @onclick="YeniEkipAc">+ Yeni Ekip</SfButton>
+</div>
+
+@if (!string.IsNullOrEmpty(_mesaj))
+{
+    <div class="ss-alert @(_hata ? "ss-alert-danger" : "ss-alert-success")">@_mesaj</div>
+}
+
+@if (_yukleniyor)
+{
+    <div class="ss-loading"><SfSpinner Visible="true" /> Yükleniyor...</div>
+}
+else
+{
+    <div class="ss-grid-2">
+        @foreach (var ekip in _ekipler)
+        {
+            <div class="ss-card">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px">
+                    <div>
+                        <div style="font-weight:700; font-size:15px">@ekip.EkipAdi</div>
+                        <div style="font-size:12px; color:var(--muted)">@ekip.EkipKodu</div>
+                    </div>
+                    <div style="display:flex; gap:6px">
+                        <SfButton CssClass="e-small e-outline" @onclick="@(() => DuzenleAc(ekip))">✏️</SfButton>
+                        <SfButton CssClass="e-small e-outline" @onclick="@(() => KullaniciAtaDialogAc(ekip))">👤 Ata</SfButton>
+                    </div>
+                </div>
+                <div style="font-size:12px; color:var(--muted); margin-bottom:6px">
+                    Üyeler (@ekip.Kullanicilar.Count())
+                </div>
+                @if (ekip.Kullanicilar.Any())
+                {
+                    <div style="display:flex; flex-direction:column; gap:4px">
+                        @foreach (var k in ekip.Kullanicilar)
+                        {
+                            <div style="display:flex; align-items:center; justify-content:space-between; padding:4px 8px; background:var(--bg); border-radius:6px">
+                                <span style="font-size:13px">@k.AdSoyad</span>
+                                <SfButton CssClass="e-small e-flat" style="color:var(--danger)"
+                                          @onclick="@(async () => await KullaniciCikar(ekip.Id, k.KullaniciId))">×</SfButton>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div style="font-size:12px; color:var(--muted); padding:8px; text-align:center">Üye yok</div>
+                }
+            </div>
+        }
+    </div>
+}
+
+<!-- Ekip Oluştur/Düzenle Dialog -->
+<SfDialog @bind-Visible="_ekipDialogAcik" Header="@(_duzenleId == 0 ? "Yeni Ekip" : "Ekip Düzenle")"
+          Width="380px" ShowCloseIcon="true">
+    <DialogTemplates>
+        <Content>
+            <div class="ss-form-group">
+                <label>Ekip Kodu *</label>
+                <SfTextBox @bind-Value="_ekipKodu" Placeholder="Örn: EKP01" />
+            </div>
+            <div class="ss-form-group">
+                <label>Ekip Adı *</label>
+                <SfTextBox @bind-Value="_ekipAdi" Placeholder="Örn: A Ekibi" />
+            </div>
+        </Content>
+        <FooterTemplate>
+            <SfButton CssClass="e-outline" @onclick="@(() => _ekipDialogAcik = false)">İptal</SfButton>
+            <SfButton CssClass="e-primary" Disabled="@_islemYukleniyor" @onclick="EkipKaydet">Kaydet</SfButton>
+        </FooterTemplate>
+    </DialogTemplates>
+</SfDialog>
+
+<!-- Kullanıcı Atama Dialog -->
+<SfDialog @bind-Visible="_kullaniciDialogAcik" Header="Ekibe Kullanıcı Ekle" Width="420px" ShowCloseIcon="true">
+    <DialogTemplates>
+        <Content>
+            <div class="ss-form-group">
+                <label>Kullanıcı Seç</label>
+                <SfDropDownList DataSource="@_atanabilirKullanicilar" @bind-Value="_secilenKullaniciId"
+                                TValue="string" TItem="KullaniciDto"
+                                Placeholder="Kullanıcı seçin...">
+                    <DropDownListFieldSettings Value="Id" Text="AdSoyad"></DropDownListFieldSettings>
+                </SfDropDownList>
+            </div>
+        </Content>
+        <FooterTemplate>
+            <SfButton CssClass="e-outline" @onclick="@(() => _kullaniciDialogAcik = false)">İptal</SfButton>
+            <SfButton CssClass="e-primary" Disabled="@_islemYukleniyor" @onclick="KullaniciEkle">Ekle</SfButton>
+        </FooterTemplate>
+    </DialogTemplates>
+</SfDialog>
+
+@code {
+    private bool _yukleniyor = true;
+    private IEnumerable<EkipDto> _ekipler = [];
+    private string _mesaj = "";
+    private bool _hata = false;
+
+    private bool _ekipDialogAcik = false;
+    private int _duzenleId = 0;
+    private string _ekipKodu = "", _ekipAdi = "";
+    private bool _islemYukleniyor = false;
+
+    private bool _kullaniciDialogAcik = false;
+    private int _atanacakEkipId = 0;
+    private string _secilenKullaniciId = "";
+    private List<KullaniciDto> _atanabilirKullanicilar = [];
+
+    protected override async Task OnInitializedAsync() => await Yukle();
+
+    private async Task Yukle()
+    {
+        _yukleniyor = true;
+        _ekipler = await EkipService.GetAllAsync();
+        _yukleniyor = false;
+    }
+
+    private void YeniEkipAc() { _duzenleId = 0; _ekipKodu = ""; _ekipAdi = ""; _ekipDialogAcik = true; }
+
+    private void DuzenleAc(EkipDto e) { _duzenleId = e.Id; _ekipKodu = e.EkipKodu; _ekipAdi = e.EkipAdi; _ekipDialogAcik = true; }
+
+    private async Task EkipKaydet()
+    {
+        if (string.IsNullOrWhiteSpace(_ekipKodu) || string.IsNullOrWhiteSpace(_ekipAdi))
+        { _mesaj = "Ekip kodu ve adı zorunludur."; _hata = true; return; }
+
+        _islemYukleniyor = true;
+        try
+        {
+            var dto = new EkipOlusturDto(_ekipKodu, _ekipAdi);
+            if (_duzenleId == 0) await EkipService.CreateAsync(dto);
+            else await EkipService.UpdateAsync(_duzenleId, dto);
+            _ekipDialogAcik = false; _mesaj = "Kaydedildi."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+        finally { _islemYukleniyor = false; }
+    }
+
+    private async Task KullaniciAtaDialogAc(EkipDto ekip)
+    {
+        _atanacakEkipId = ekip.Id;
+        var tumKullanicilar = await KullaniciService.GetAllAsync();
+        var mevcutIdler = ekip.Kullanicilar.Select(k => k.KullaniciId).ToHashSet();
+        _atanabilirKullanicilar = tumKullanicilar.Where(k => !mevcutIdler.Contains(k.Id) && k.AktifMi).ToList();
+        _secilenKullaniciId = "";
+        _kullaniciDialogAcik = true;
+    }
+
+    private async Task KullaniciEkle()
+    {
+        if (string.IsNullOrEmpty(_secilenKullaniciId)) { _mesaj = "Kullanıcı seçin."; _hata = true; return; }
+        _islemYukleniyor = true;
+        try
+        {
+            await EkipService.KullaniciEkleAsync(_atanacakEkipId, _secilenKullaniciId);
+            _kullaniciDialogAcik = false; _mesaj = "Kullanıcı eklendi."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+        finally { _islemYukleniyor = false; }
+    }
+
+    private async Task KullaniciCikar(int ekipId, string kullaniciId)
+    {
+        try
+        {
+            await EkipService.KullaniciCikarAsync(ekipId, kullaniciId);
+            _mesaj = "Kullanıcı ekipten çıkarıldı."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+    }
+}

@@ -1,0 +1,86 @@
+@page "/login"
+@layout LoginLayout
+@inject IAuthHttpService AuthService
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Giriş — Stok Sayım</PageTitle>
+
+<div class="ss-login-page">
+    <div class="ss-login-box">
+        <div class="ss-login-logo">
+            <div class="ss-login-logo-icon">📦</div>
+            <div class="ss-login-logo-title">Stok Sayım</div>
+            <div class="ss-login-logo-sub">Yönetim Sistemi</div>
+        </div>
+
+        <div class="ss-login-title">Giriş Yapın</div>
+
+        @if (!string.IsNullOrEmpty(_hata))
+        {
+            <div class="ss-alert ss-alert-danger">⚠️ @_hata</div>
+        }
+
+        <div class="ss-form-group">
+            <label>E-Posta</label>
+            <SfTextBox @bind-Value="_email" Placeholder="ornek@sirket.com" Type="InputType.Email" />
+        </div>
+
+        <div class="ss-form-group">
+            <label>Şifre</label>
+            <SfTextBox @bind-Value="_sifre" Placeholder="••••••••" Type="InputType.Password" />
+        </div>
+
+        <SfButton CssClass="e-primary" style="width:100%; margin-top:8px"
+                  IsPrimary="true" Disabled="_yukleniyor"
+                  @onclick="GirisYap">
+            @(_yukleniyor ? "Giriş yapılıyor..." : "Giriş Yap")
+        </SfButton>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    private string _email = "";
+    private string _sifre = "";
+    private string _hata = "";
+    private bool _yukleniyor = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthProvider.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated == true)
+            Nav.NavigateTo("/");
+    }
+
+    private async Task GirisYap()
+    {
+        _hata = "";
+        if (string.IsNullOrWhiteSpace(_email) || string.IsNullOrWhiteSpace(_sifre))
+        {
+            _hata = "E-posta ve şifre zorunludur.";
+            return;
+        }
+
+        _yukleniyor = true;
+        try
+        {
+            var result = await AuthService.LoginAsync(new LoginRequestDto(_email, _sifre));
+            if (result == null)
+            {
+                _hata = "Geçersiz e-posta veya şifre.";
+                return;
+            }
+            Nav.NavigateTo(ReturnUrl ?? "/");
+        }
+        catch (Exception ex)
+        {
+            _hata = "Giriş sırasında hata: " + ex.Message;
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+}

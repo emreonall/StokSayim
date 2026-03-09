@@ -1,0 +1,211 @@
+@page "/tur-sonucu/{TurId:int}"
+@attribute [Authorize(Roles = "Admin,SayimSorumlusu")]
+@inject ISayimOturumuHttpService OturumuService
+@inject NavigationManager Nav
+
+<PageTitle>Tur Sonucu</PageTitle>
+
+@if (_yukleniyor)
+{
+    <div class="ss-loading"><SfSpinner Visible="true" /> Yükleniyor...</div>
+}
+else
+{
+    <div class="ss-page-header">
+        <div>
+            <h1 class="ss-page-title">Tur Sonucu</h1>
+            <p class="ss-page-subtitle">Karşılaştırma detayı ve karar ekranı</p>
+        </div>
+        <SfButton CssClass="e-outline" @onclick="@(() => Nav.NavigateTo("-1"))">← Geri</SfButton>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_mesaj))
+    {
+        <div class="ss-alert @(_hata ? "ss-alert-danger" : "ss-alert-success")">@_mesaj</div>
+    }
+
+    <!-- Filtre -->
+    <div class="ss-card" style="padding:12px 20px; margin-bottom:16px">
+        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+            <label style="font-size:12px; color:var(--muted); font-weight:600">FİLTRE:</label>
+            <SfButton CssClass="@(_filtre == "Tumu" ? "e-primary e-small" : "e-outline e-small")" @onclick="@(() => _filtre = "Tumu")">Tümü</SfButton>
+            <SfButton CssClass="@(_filtre == "FarkVar" ? "e-primary e-small" : "e-outline e-small")" @onclick="@(() => _filtre = "FarkVar")">Fark Var</SfButton>
+            <SfButton CssClass="@(_filtre == "Eslesti" ? "e-primary e-small" : "e-outline e-small")" @onclick="@(() => _filtre = "Eslesti")">Eşleşti</SfButton>
+            <SfButton CssClass="@(_filtre == "KararBekliyor" ? "e-primary e-small" : "e-outline e-small")" @onclick="@(() => _filtre = "KararBekliyor")">Karar Bekliyor</SfButton>
+        </div>
+    </div>
+
+    <!-- Grid -->
+    <div class="ss-card">
+        <SfGrid DataSource="@FiltrelenmisDetaylar" AllowPaging="true" AllowSorting="true">
+            <GridPageSettings PageSize="20" />
+            <GridColumns>
+                <GridColumn Field="MalzemeKodu" HeaderText="Malzeme Kodu" Width="130" />
+                <GridColumn Field="MalzemeAdi" HeaderText="Malzeme Adı" Width="200" />
+                <GridColumn Field="LotNo" HeaderText="Lot No" Width="100" />
+                <GridColumn Field="Birim" HeaderText="Birim" Width="70" TextAlign="TextAlign.Center" />
+                <GridColumn Field="Deger1" HeaderText="Değer 1 / ERP" Width="110" Format="N2" TextAlign="TextAlign.Right" />
+                <GridColumn Field="Deger2" HeaderText="Değer 2 / Fiili" Width="110" Format="N2" TextAlign="TextAlign.Right" />
+                <GridColumn Field="Fark" HeaderText="Fark" Width="90" Format="N2" TextAlign="TextAlign.Right">
+                    <Template>
+                        @{
+                            var d = (TurSonucuDetayRow)context;
+                        }
+                        <span style="color:@(d.Fark == 0 ? "var(--success)" : d.Fark > 0 ? "var(--warn)" : "var(--danger)"); font-weight:600">
+                            @(d.Fark?.ToString("N2") ?? "—")
+                        </span>
+                    </Template>
+                </GridColumn>
+                <GridColumn HeaderText="Durum" Width="120">
+                    <Template>
+                        @{
+                            var d = (TurSonucuDetayRow)context;
+                            var (cls, txt) = d.Durum switch
+                            {
+                                "Eslesti" => ("ss-badge-success", "Eşleşti"),
+                                "FarkVar" => ("ss-badge-danger", "Fark Var"),
+                                _ => ("ss-badge-muted", d.Durum)
+                            };
+                        }
+                        <span class="ss-badge @cls">@txt</span>
+                    </Template>
+                </GridColumn>
+                <GridColumn HeaderText="Onaylanan" Width="110" TextAlign="TextAlign.Right">
+                    <Template>
+                        @{
+                            var d = (TurSonucuDetayRow)context;
+                        }
+                        @if (d.OnaylananDeger.HasValue)
+                        {
+                            <span style="font-weight:600; color:var(--success)">@d.OnaylananDeger.Value.ToString("N2")</span>
+                            @if (d.KararTipi == "Manuel")
+                            {
+                                <span class="ss-badge ss-badge-warn" style="margin-left:4px; font-size:10px">M</span>
+                            }
+                        }
+                        else
+                        {
+                            <span style="color:var(--muted)">—</span>
+                        }
+                    </Template>
+                </GridColumn>
+                <GridColumn HeaderText="İşlem" Width="130" TextAlign="TextAlign.Center">
+                    <Template>
+                        @{
+                            var d = (TurSonucuDetayRow)context;
+                        }
+                        @if (d.Durum == "FarkVar" && !d.OnaylananDeger.HasValue)
+                        {
+                            <SfButton CssClass="e-small e-outline" style="color:var(--warn)"
+                                      @onclick="@(() => ManuelKararAc(d))">
+                                ⚖️ Karar Ver
+                            </SfButton>
+                        }
+                    </Template>
+                </GridColumn>
+            </GridColumns>
+        </SfGrid>
+    </div>
+}
+
+<!-- Manuel Karar Dialog -->
+<SfDialog @bind-Visible="_manuelDialogAcik" Header="Manuel Karar" Width="420px" ShowCloseIcon="true">
+    <DialogTemplates>
+        <Content>
+            @if (_aktifDetay != null)
+            {
+                <div class="ss-alert ss-alert-info" style="margin-bottom:16px">
+                    <strong>@_aktifDetay.MalzemeKodu</strong> — @_aktifDetay.MalzemeAdi
+                    @if (!string.IsNullOrEmpty(_aktifDetay.LotNo)) { <span> | Lot: @_aktifDetay.LotNo</span> }
+                </div>
+                <div style="display:flex; gap:16px; margin-bottom:16px">
+                    <div style="flex:1; text-align:center; padding:12px; background:var(--bg); border-radius:8px">
+                        <div style="font-size:11px; color:var(--muted)">Değer 1</div>
+                        <div style="font-size:20px; font-weight:700">@(_aktifDetay.Deger1?.ToString("N2") ?? "—")</div>
+                    </div>
+                    <div style="flex:1; text-align:center; padding:12px; background:var(--bg); border-radius:8px">
+                        <div style="font-size:11px; color:var(--muted)">Değer 2</div>
+                        <div style="font-size:20px; font-weight:700">@(_aktifDetay.Deger2?.ToString("N2") ?? "—")</div>
+                    </div>
+                </div>
+                <div class="ss-form-group">
+                    <label>Onaylanan Değer *</label>
+                    <SfNumericTextBox @bind-Value="_kararDeger" Format="N2" />
+                </div>
+                <div class="ss-form-group">
+                    <label>Gerekçe *</label>
+                    <SfTextBox @bind-Value="_kararGerekce" Multiline="true" Placeholder="Kararınızın gerekçesini yazın..." />
+                </div>
+            }
+        </Content>
+        <FooterTemplate>
+            <SfButton CssClass="e-outline" @onclick="@(() => _manuelDialogAcik = false)">İptal</SfButton>
+            <SfButton CssClass="e-primary" Disabled="@_kararYukleniyor" @onclick="ManuelKararKaydet">
+                @(_kararYukleniyor ? "Kaydediliyor..." : "✓ Kaydet")
+            </SfButton>
+        </FooterTemplate>
+    </DialogTemplates>
+</SfDialog>
+
+@code {
+    [Parameter] public int TurId { get; set; }
+
+    private bool _yukleniyor = true;
+    private List<TurSonucuDetayRow> _detaylar = [];
+    private string _filtre = "Tumu";
+    private string _mesaj = "";
+    private bool _hata = false;
+
+    // Manuel karar
+    private bool _manuelDialogAcik = false;
+    private TurSonucuDetayRow? _aktifDetay;
+    private decimal _kararDeger = 0;
+    private string _kararGerekce = "";
+    private bool _kararYukleniyor = false;
+
+    record TurSonucuDetayRow(int Id, string MalzemeKodu, string MalzemeAdi, string? LotNo, string? SeriNo,
+        string Birim, decimal? Deger1, decimal? Deger2, decimal? Fark, decimal? FarkYuzdesi,
+        string Durum, decimal? OnaylananDeger, string? KararTipi);
+
+    private IEnumerable<TurSonucuDetayRow> FiltrelenmisDetaylar => _filtre switch
+    {
+        "FarkVar" => _detaylar.Where(d => d.Durum == "FarkVar"),
+        "Eslesti" => _detaylar.Where(d => d.Durum == "Eslesti"),
+        "KararBekliyor" => _detaylar.Where(d => d.Durum == "FarkVar" && !d.OnaylananDeger.HasValue),
+        _ => _detaylar
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // TurSonucu detaylarını yükle
+        // Not: TurSonucuDetay için ayrı HTTP service eklenebilir;
+        // şimdilik oturum üzerinden erişiyoruz.
+        _yukleniyor = false;
+    }
+
+    private void ManuelKararAc(TurSonucuDetayRow detay)
+    {
+        _aktifDetay = detay;
+        _kararDeger = detay.Deger1 ?? detay.Deger2 ?? 0;
+        _kararGerekce = "";
+        _manuelDialogAcik = true;
+    }
+
+    private async Task ManuelKararKaydet()
+    {
+        if (_aktifDetay == null) return;
+        if (string.IsNullOrWhiteSpace(_kararGerekce)) { _mesaj = "Gerekçe zorunludur."; _hata = true; return; }
+
+        _kararYukleniyor = true;
+        try
+        {
+            var dto = new ManuelKararDto(_kararDeger, _kararGerekce);
+            await OturumuService.ManuelKararVerAsync(_aktifDetay.Id, dto);
+            _manuelDialogAcik = false;
+            _mesaj = "Karar kaydedildi."; _hata = false;
+            await OnInitializedAsync();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+        finally { _kararYukleniyor = false; }
+    }
+}

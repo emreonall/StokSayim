@@ -1,0 +1,367 @@
+@page "/"
+@attribute [Authorize]
+@inject ISayimPlaniHttpService PlanService
+@inject ISayimOturumuHttpService OturumuService
+@inject NavigationManager Nav
+
+<PageTitle>Dashboard — Stok Sayım</PageTitle>
+
+<div class="ss-page-header">
+    <div>
+        <h1 class="ss-page-title">Dashboard</h1>
+        <p class="ss-page-subtitle">@DateTime.Now.ToString("dd MMMM yyyy")</p>
+    </div>
+    <AuthorizeView Roles="Admin,SayimSorumlusu">
+        <SfButton CssClass="e-primary" @onclick="@(() => Nav.NavigateTo("/sayim-planlari/yeni"))">
+            + Yeni Plan
+        </SfButton>
+    </AuthorizeView>
+</div>
+
+@if (_yukleniyor)
+{
+    <div class="ss-loading"><SfSpinner Visible="true" /> Yükleniyor...</div>
+}
+else
+{
+    <SfDashboardLayout CellSpacing="@_cellSpacing" Columns="6" CellAspectRatio="1.5f" AllowResizing="true">
+        <DashboardLayoutPanels>
+
+            <!-- Stat: Toplam Plan -->
+            <DashboardLayoutPanel Id="p-toplam" Row="0" Column="0" SizeX="1" SizeY="1">
+                <HeaderTemplate><div class="dl-panel-header">📋 Toplam Plan</div></HeaderTemplate>
+                <ContentTemplate>
+                    <div class="dl-stat primary">
+                        <div class="dl-stat-value">@_planlar.Count()</div>
+                        <div class="dl-stat-sub">@_planlar.Count(p => p.Durum == SayimPlaniDurum.Taslak) taslak</div>
+                    </div>
+                </ContentTemplate>
+            </DashboardLayoutPanel>
+
+            <!-- Stat: Aktif -->
+            <DashboardLayoutPanel Id="p-aktif" Row="0" Column="1" SizeX="1" SizeY="1">
+                <HeaderTemplate><div class="dl-panel-header">▶️ Aktif Plan</div></HeaderTemplate>
+                <ContentTemplate>
+                    <div class="dl-stat accent">
+                        <div class="dl-stat-value">@_planlar.Count(p => p.Durum == SayimPlaniDurum.Aktif)</div>
+                        <div class="dl-stat-sub">devam ediyor</div>
+                    </div>
+                </ContentTemplate>
+            </DashboardLayoutPanel>
+
+            <!-- Stat: Bekleyen -->
+            <DashboardLayoutPanel Id="p-bekleyen" Row="0" Column="2" SizeX="1" SizeY="1">
+                <HeaderTemplate><div class="dl-panel-header">⚠️ Bekleyen İş</div></HeaderTemplate>
+                <ContentTemplate>
+                    <div class="dl-stat @(_bildirimler.Any() ? "warn" : "success")" style="cursor:pointer"
+                         @onclick="@(() => Nav.NavigateTo("/bekleyen-isler"))">
+                        <div class="dl-stat-value">@_bildirimler.Count()</div>
+                        <div class="dl-stat-sub">@(_bildirimler.Any() ? "işlem gerekiyor" : "temiz ✓")</div>
+                    </div>
+                </ContentTemplate>
+            </DashboardLayoutPanel>
+
+            <!-- Stat: Tamamlanan -->
+            <DashboardLayoutPanel Id="p-tamam" Row="0" Column="3" SizeX="1" SizeY="1">
+                <HeaderTemplate><div class="dl-panel-header">✅ Tamamlanan</div></HeaderTemplate>
+                <ContentTemplate>
+                    <div class="dl-stat success">
+                        <div class="dl-stat-value">@_planlar.Count(p => p.Durum == SayimPlaniDurum.Kapali)</div>
+                        <div class="dl-stat-sub">plan kapatıldı</div>
+                    </div>
+                </ContentTemplate>
+            </DashboardLayoutPanel>
+
+            <!-- Stat: ERP -->
+            <DashboardLayoutPanel Id="p-erp" Row="0" Column="4" SizeX="1" SizeY="1">
+                <HeaderTemplate><div class="dl-panel-header">📊 ERP Karş.</div></HeaderTemplate>
+                <ContentTemplate>
+                    <div class="dl-stat erp">
+                        <div class="dl-stat-value">@_planlar.Count(p => p.Durum == SayimPlaniDurum.ErpKarsilastirmaAktif)</div>
+                        <div class="dl-stat-sub">aktif</div>
+                    </div>
+                </ContentTemplate>
+            </DashboardLayoutPanel>
+
+            <!-- Stat: İptal -->
+            <DashboardLayoutPanel Id="p-iptal" Row="0" Column="5" SizeX="1" SizeY="1">
+                <HeaderTemplate><div class="dl-panel-header">🚫 İptal</div></HeaderTemplate>
+                <ContentTemplate>
+                    <div class="dl-stat danger">
+                        <div class="dl-stat-value">@_planlar.Count(p => p.Durum == SayimPlaniDurum.Iptal)</div>
+                        <div class="dl-stat-sub">iptal edildi</div>
+                    </div>
+                </ContentTemplate>
+            </DashboardLayoutPanel>
+
+            <!-- Pie Chart: Durum Dağılımı -->
+            <DashboardLayoutPanel Id="p-pie" Row="1" Column="0" SizeX="2" SizeY="2">
+                <HeaderTemplate><div class="dl-panel-header">🥧 Plan Durum Dağılımı</div></HeaderTemplate>
+                <ContentTemplate>
+                    @if (_durumVerisi.Any())
+                    {
+                        <SfAccumulationChart EnableAnimation="true" Background="transparent" Height="100%">
+                            <AccumulationChartSeriesCollection>
+                                <AccumulationChartSeries DataSource="@_durumVerisi"
+                                                         XName="Durum" YName="Sayi"
+                                                         InnerRadius="35%" Radius="75%"
+                                                         Palettes="@_palette">
+                                    <AccumulationDataLabelSettings Visible="true"
+                                                                   Position="AccumulationLabelPosition.Outside"
+                                                                   Name="Durum">
+                                        <AccumulationChartDataLabelFont Size="11px" />
+                                    </AccumulationDataLabelSettings>
+                                </AccumulationChartSeries>
+                            </AccumulationChartSeriesCollection>
+                            <AccumulationChartLegendSettings Visible="true" Position="LegendPosition.Bottom" />
+                            <AccumulationChartTooltipSettings Enable="true" Format="${point.x}: <b>${point.y}</b>" />
+                        </SfAccumulationChart>
+                    }
+                    else
+                    {
+                        <div class="ss-empty"><div class="ss-empty-icon">📊</div><div class="ss-empty-text">Veri yok</div></div>
+                    }
+                </ContentTemplate>
+            </DashboardLayoutPanel>
+
+            <!-- Bar Chart: Bölge Tamamlanma -->
+            <DashboardLayoutPanel Id="p-bar" Row="1" Column="2" SizeX="2" SizeY="2">
+                <HeaderTemplate><div class="dl-panel-header">📈 Bölge Tamamlanma (%)</div></HeaderTemplate>
+                <ContentTemplate>
+                    @if (_bolgeChartVerisi.Any())
+                    {
+                        <SfChart Background="transparent" Height="100%">
+                            <ChartPrimaryXAxis ValueType="Syncfusion.Blazor.Charts.ValueType.Category">
+                                <ChartAxisLabelStyle Size="10px" />
+                            </ChartPrimaryXAxis>
+                            <ChartPrimaryYAxis Maximum="100" LabelFormat="{value}%">
+                                <ChartAxisLabelStyle Size="10px" />
+                            </ChartPrimaryYAxis>
+                            <ChartSeriesCollection>
+                                <ChartSeries DataSource="@_bolgeChartVerisi" XName="Plan" YName="Yuzde"
+                                             Type="ChartSeriesType.Bar" Fill="#0d9488" CornerRadius="@_cornerRadius">
+                                    <ChartMarker>
+                                        <ChartDataLabel Visible="true"
+                                                        Position="Syncfusion.Blazor.Charts.LabelPosition.Top">
+                                            <ChartDataLabelFont Size="10px" />
+                                        </ChartDataLabel>
+                                    </ChartMarker>
+                                </ChartSeries>
+                            </ChartSeriesCollection>
+                            <ChartTooltipSettings Enable="true" />
+                        </SfChart>
+                    }
+                    else
+                    {
+                        <div class="ss-empty"><div class="ss-empty-icon">📈</div><div class="ss-empty-text">Aktif plan yok</div></div>
+                    }
+                </ContentTemplate>
+            </DashboardLayoutPanel>
+
+            <!-- Aktif Planlar İlerleme -->
+            <DashboardLayoutPanel Id="p-ilerleme" Row="1" Column="4" SizeX="2" SizeY="2">
+                <HeaderTemplate><div class="dl-panel-header">🗺️ Aktif Plan İlerlemeleri</div></HeaderTemplate>
+                <ContentTemplate>
+                    @{
+                        var aktif = _planlar.Where(p => p.Durum == SayimPlaniDurum.Aktif).ToList();
+                    }
+                    @if (!aktif.Any())
+                    {
+                        <div class="ss-empty"><div class="ss-empty-icon">📋</div><div class="ss-empty-text">Aktif plan yok</div></div>
+                    }
+                    else
+                    {
+                        <div style="overflow-y:auto; height:100%; padding:2px 0">
+                            @foreach (var plan in aktif)
+                            {
+                                var pct = plan.BolgeSayisi == 0 ? 0 :
+                                    (int)((double)plan.TamamlananBolgeSayisi / plan.BolgeSayisi * 100);
+                                <div style="margin-bottom:12px; cursor:pointer"
+                                     @onclick="@(() => Nav.NavigateTo($"/sayim-planlari/{plan.Id}"))">
+                                    <div style="display:flex; justify-content:space-between; margin-bottom:3px">
+                                        <span style="font-size:12px; font-weight:600">@plan.PlanAdi</span>
+                                        <span style="font-size:11px; color:var(--muted)">%@pct</span>
+                                    </div>
+                                    <div class="ss-progress">
+                                        <div class="ss-progress-fill" style="width:@pct%"></div>
+                                    </div>
+                                    <div style="font-size:11px; color:var(--muted); margin-top:2px">
+                                        @plan.TamamlananBolgeSayisi / @plan.BolgeSayisi bölge
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </ContentTemplate>
+            </DashboardLayoutPanel>
+
+            <!-- Bekleyen İşler Listesi -->
+            <DashboardLayoutPanel Id="p-bekleyen-liste" Row="3" Column="0" SizeX="3" SizeY="2">
+                <HeaderTemplate>
+                    <div class="dl-panel-header" style="display:flex; justify-content:space-between; width:100%">
+                        <span>⚠️ Bekleyen İşler</span>
+                        @if (_bildirimler.Any())
+                        {
+                            <SfButton CssClass="e-small e-flat"
+                                      @onclick="@(() => Nav.NavigateTo("/bekleyen-isler"))">Tümü →</SfButton>
+                        }
+                    </div>
+                </HeaderTemplate>
+                <ContentTemplate>
+                    @if (!_bildirimler.Any())
+                    {
+                        <div class="ss-empty" style="padding:20px">
+                            <div class="ss-empty-icon">✅</div>
+                            <div class="ss-empty-text">Bekleyen iş yok</div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="overflow-y:auto; height:100%">
+                            @foreach (var b in _bildirimler.Take(6))
+                            {
+                                <div class="dl-notif-row">
+                                    <span style="font-size:18px">
+                                        @(b.BildirimTipi == GorevBildirimTipi.KontrolSayimiGerekli ? "🔁" :
+                                          b.BildirimTipi == GorevBildirimTipi.ManuelKararGerekli ? "⚖️" :
+                                          b.BildirimTipi == GorevBildirimTipi.ErpKontrolGerekli ? "📊" : "⚠️")
+                                    </span>
+                                    <div style="flex:1; min-width:0">
+                                        <div style="font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">@b.BolgeAdi</div>
+                                        <div style="font-size:11px; color:var(--muted)">@b.BildirimTipiAdi · Tur @b.TurNo</div>
+                                    </div>
+                                    <SfButton CssClass="e-small e-outline"
+                                              @onclick="@(() => Nav.NavigateTo("/bekleyen-isler"))">İşle</SfButton>
+                                </div>
+                            }
+                        </div>
+                    }
+                </ContentTemplate>
+            </DashboardLayoutPanel>
+
+            <!-- Son Planlar Grid -->
+            <DashboardLayoutPanel Id="p-planlar-grid" Row="3" Column="3" SizeX="3" SizeY="2">
+                <HeaderTemplate>
+                    <div class="dl-panel-header" style="display:flex; justify-content:space-between; width:100%">
+                        <span>📋 Tüm Planlar</span>
+                        <SfButton CssClass="e-small e-flat"
+                                  @onclick="@(() => Nav.NavigateTo("/sayim-planlari"))">Tümü →</SfButton>
+                    </div>
+                </HeaderTemplate>
+                <ContentTemplate>
+                    <SfGrid DataSource="@_planlar.Take(8).ToList()" AllowSorting="true" Height="100%">
+                        <GridColumns>
+                            <GridColumn Field="PlanAdi" HeaderText="Plan Adı" />
+                            <GridColumn HeaderText="Durum" Width="120">
+                                <Template>
+                                    @{
+                                        var p = (SayimPlaniListDto)context;
+                                        var (cls, txt) = DurumBilgi(p.Durum);
+                                    }
+                                    <span class="ss-badge @cls">@txt</span>
+                                </Template>
+                            </GridColumn>
+                            <GridColumn HeaderText="" Width="60" TextAlign="TextAlign.Center">
+                                <Template>
+                                    @{
+                                        var p = (SayimPlaniListDto)context;
+                                    }
+                                    <SfButton CssClass="e-small e-flat"
+                                              @onclick="@(() => Nav.NavigateTo($"/sayim-planlari/{p.Id}"))">→</SfButton>
+                                </Template>
+                            </GridColumn>
+                        </GridColumns>
+                    </SfGrid>
+                </ContentTemplate>
+            </DashboardLayoutPanel>
+
+        </DashboardLayoutPanels>
+    </SfDashboardLayout>
+}
+
+<style>
+    .dl-panel-header { font-size: 13px; font-weight: 600; color: var(--text); width: 100%; }
+
+    .dl-stat {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        height: 100%; border-radius: 8px; padding: 8px;
+    }
+    .dl-stat.primary { background: linear-gradient(135deg,#1e3a5f,#2d5f9e); color:#fff; }
+    .dl-stat.accent  { background: linear-gradient(135deg,#0d9488,#14b8a6); color:#fff; }
+    .dl-stat.warn    { background: linear-gradient(135deg,#d97706,#f59e0b); color:#fff; }
+    .dl-stat.success { background: linear-gradient(135deg,#15803d,#22c55e); color:#fff; }
+    .dl-stat.danger  { background: linear-gradient(135deg,#b91c1c,#ef4444); color:#fff; }
+    .dl-stat.erp     { background: linear-gradient(135deg,#6d28d9,#8b5cf6); color:#fff; }
+    .dl-stat-value { font-size: 38px; font-weight: 800; line-height: 1; }
+    .dl-stat-sub   { font-size: 12px; opacity: .85; margin-top: 6px; }
+
+    .dl-notif-row {
+        display: flex; align-items: center; gap: 10px;
+        padding: 8px 2px; border-bottom: 1px solid var(--border);
+    }
+    .dl-notif-row:last-child { border-bottom: none; }
+
+    .e-dashboard-layout .e-panel {
+        border: 1px solid var(--border) !important;
+        border-radius: 10px !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.06) !important;
+    }
+    .e-dashboard-layout .e-panel .e-panel-container { padding: 8px 12px 12px; }
+</style>
+
+@code {
+    private bool _yukleniyor = true;
+    private IEnumerable<SayimPlaniListDto> _planlar = [];
+    private IEnumerable<GorevBildirimDto> _bildirimler = [];
+    private List<DurumVeri> _durumVerisi = [];
+    private List<BolgeChartVeri> _bolgeChartVerisi = [];
+
+    private double[] _cellSpacing = [10, 10];
+    private string[] _palette = ["#1e3a5f", "#0d9488", "#d97706", "#6d28d9", "#15803d", "#dc2626"];
+    private ChartCornerRadius _cornerRadius = new() { TopLeft = 4, TopRight = 4 };
+
+    record DurumVeri(string Durum, int Sayi);
+    record BolgeChartVeri(string Plan, int Yuzde);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(YuklePlanlar(), YukleBildirimler());
+        HazirlaChartVerisi();
+        _yukleniyor = false;
+    }
+
+    private async Task YuklePlanlar() => _planlar = await PlanService.GetAllAsync();
+
+    private async Task YukleBildirimler()
+    {
+        try { _bildirimler = await OturumuService.GetBekleyenBildirimlerAsync(); }
+        catch { }
+    }
+
+    private void HazirlaChartVerisi()
+    {
+        _durumVerisi = _planlar
+            .GroupBy(p => p.Durum)
+            .Select(g => new DurumVeri(DurumBilgi(g.Key).txt, g.Count()))
+            .Where(d => d.Sayi > 0)
+            .ToList();
+
+        _bolgeChartVerisi = _planlar
+            .Where(p => p.Durum == SayimPlaniDurum.Aktif && p.BolgeSayisi > 0)
+            .Select(p => new BolgeChartVeri(
+                p.PlanAdi.Length > 14 ? p.PlanAdi[..14] + "…" : p.PlanAdi,
+                (int)((double)p.TamamlananBolgeSayisi / p.BolgeSayisi * 100)
+            ))
+            .ToList();
+    }
+
+    private (string cls, string txt) DurumBilgi(SayimPlaniDurum d) => d switch
+    {
+        SayimPlaniDurum.Taslak                => ("ss-badge-muted",   "Taslak"),
+        SayimPlaniDurum.Aktif                 => ("ss-badge-accent",  "Aktif"),
+        SayimPlaniDurum.SayimTamamlandi       => ("ss-badge-primary", "Sayım Bitti"),
+        SayimPlaniDurum.ErpKarsilastirmaAktif => ("ss-badge-warn",    "ERP Karş."),
+        SayimPlaniDurum.Kapali                => ("ss-badge-success", "Kapalı"),
+        _                                     => ("ss-badge-muted",   d.ToString())
+    };
+}

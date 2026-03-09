@@ -1,0 +1,162 @@
+@page "/sayim-planlari/yeni"
+@page "/sayim-planlari/{Id:int}/duzenle"
+
+@attribute [Authorize(Roles = "Admin,SayimSorumlusu")]
+@inject ISayimPlaniHttpService PlanService
+@inject NavigationManager Nav
+
+<PageTitle>@(Id == 0 ? "Yeni Plan" : "Plan Düzenle")</PageTitle>
+
+<div class="ss-page-header">
+    <div>
+        <h1 class="ss-page-title">@(Id == 0 ? "Yeni Sayım Planı" : "Plan Düzenle")</h1>
+    </div>
+    <SfButton CssClass="e-outline" @onclick="@(() => Nav.NavigateTo(Id == 0 ? "/sayim-planlari" : $"/sayim-planlari/{Id}"))">
+        ← Geri
+    </SfButton>
+</div>
+
+@if (!string.IsNullOrEmpty(_hata))
+{
+    <div class="ss-alert ss-alert-danger">@_hata</div>
+}
+
+<div class="ss-card">
+    <div class="ss-card-title">Plan Bilgileri</div>
+    <div class="ss-grid-2" style="margin-bottom:16px">
+        <div class="ss-form-group">
+            <label>Plan Adı *</label>
+            <SfTextBox @bind-Value="_planAdi" Placeholder="Örn: 2024 Yıl Sonu Sayımı" />
+        </div>
+        <div class="ss-form-group">
+            <label>Açıklama</label>
+            <SfTextBox @bind-Value="_aciklama" Placeholder="İsteğe bağlı açıklama..." />
+        </div>
+    </div>
+    <div class="ss-grid-2">
+        <div class="ss-form-group">
+            <label>Başlangıç Tarihi *</label>
+            <SfDatePicker Value="@_baslangic" Format="dd.MM.yyyy" />
+        </div>
+        <div class="ss-form-group">
+            <label>Bitiş Tarihi *</label>
+            <SfDatePicker Value="@_bitis" Format="dd.MM.yyyy" />
+        </div>
+    </div>
+</div>
+
+<div class="ss-card">
+    <div class="ss-card-title">ERP Depo Kodları</div>
+    <p style="font-size:13px; color:var(--muted); margin-bottom:16px">
+        Bu sayıma dahil edilecek ERP depo kodlarını girin. ERP import sırasında sadece bu kodlardaki stoklar alınacaktır.
+    </p>
+
+    <div style="display:flex; gap:8px; margin-bottom:12px; align-items:flex-end">
+        <div class="ss-form-group" style="flex:1; margin-bottom:0">
+            <label>Depo Kodu</label>
+            <SfTextBox @bind-Value="_yeniDepoKodu" Placeholder="Örn: WH01"
+                       @onkeydown="DepoKoduKeyDown" />
+        </div>
+        <SfButton CssClass="e-outline" @onclick="DepoKoduEkle">+ Ekle</SfButton>
+    </div>
+
+    @if (_depoKodlari.Any())
+    {
+        <div style="display:flex; flex-wrap:wrap; gap:6px">
+            @foreach (var kod in _depoKodlari)
+            {
+                <span class="ss-badge ss-badge-primary" style="gap:6px">
+                    @kod
+                    <span style="cursor:pointer; font-weight:700" @onclick="@(() => DepoKoduCikar(kod))">×</span>
+                </span>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="ss-alert ss-alert-warn">En az bir depo kodu zorunludur.</div>
+    }
+</div>
+
+<div style="display:flex; gap:8px; justify-content:flex-end">
+    <SfButton CssClass="e-outline"
+              @onclick="@(() => Nav.NavigateTo(Id == 0 ? "/sayim-planlari" : $"/sayim-planlari/{Id}"))">
+        İptal
+    </SfButton>
+    <SfButton CssClass="e-primary" Disabled="@_yukleniyor" @onclick="Kaydet">
+        @(_yukleniyor ? "Kaydediliyor..." : "💾 Kaydet")
+    </SfButton>
+</div>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private string _planAdi = "";
+    private string? _aciklama;
+    private DateTime _baslangic = DateTime.Today;
+    private DateTime _bitis = DateTime.Today.AddDays(7);
+    private List<string> _depoKodlari = [];
+    private string _yeniDepoKodu = "";
+    private string _hata = "";
+    private bool _yukleniyor = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id != 0)
+        {
+            var plan = await PlanService.GetByIdAsync(Id);
+            if (plan != null)
+            {
+                _planAdi = plan.PlanAdi;
+                _aciklama = plan.Aciklama;
+                _baslangic = plan.BaslangicTarihi;
+                _bitis = plan.BitisTarihi;
+                _depoKodlari = plan.DepoKodlari.ToList();
+            }
+        }
+    }
+
+    private void DepoKoduEkle()
+    {
+        var kod = _yeniDepoKodu.Trim().ToUpper();
+        if (!string.IsNullOrEmpty(kod) && !_depoKodlari.Contains(kod))
+        {
+            _depoKodlari.Add(kod);
+            _yeniDepoKodu = "";
+        }
+    }
+
+    private void DepoKoduCikar(string kod) => _depoKodlari.Remove(kod);
+
+    private void DepoKoduKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") DepoKoduEkle();
+    }
+
+    private async Task Kaydet()
+    {
+        _hata = "";
+        if (string.IsNullOrWhiteSpace(_planAdi)) { _hata = "Plan adı zorunludur."; return; }
+        if (!_depoKodlari.Any()) { _hata = "En az bir depo kodu zorunludur."; return; }
+        if (_bitis < _baslangic) { _hata = "Bitiş tarihi başlangıçtan önce olamaz."; return; }
+
+        _yukleniyor = true;
+        try
+        {
+            if (Id == 0)
+            {
+                var dto = new SayimPlaniOlusturDto(_planAdi, _aciklama, _baslangic, _bitis, _depoKodlari);
+                var plan = await PlanService.CreateAsync(dto);
+                Nav.NavigateTo($"/sayim-planlari/{plan?.Id}");
+            }
+            else
+            {
+                var dto = new SayimPlaniGuncelleDto(_planAdi, _aciklama, _baslangic, _bitis, _depoKodlari);
+                await PlanService.UpdateAsync(Id, dto);
+                Nav.NavigateTo($"/sayim-planlari/{Id}");
+            }
+        }
+        catch (Exception ex) { _hata = ex.Message; }
+        finally { _yukleniyor = false; }
+    }
+}

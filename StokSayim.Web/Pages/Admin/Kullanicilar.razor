@@ -1,0 +1,174 @@
+@page "/admin/kullanicilar"
+@attribute [Authorize(Roles = "Admin")]
+@inject IKullaniciHttpService KullaniciService
+@inject IEkipHttpService EkipService
+
+<PageTitle>Kullanıcılar</PageTitle>
+
+<div class="ss-page-header">
+    <div>
+        <h1 class="ss-page-title">Kullanıcılar</h1>
+        <p class="ss-page-subtitle">@_kullanicilar.Count() kullanıcı</p>
+    </div>
+    <SfButton CssClass="e-primary" @onclick="YeniKullaniciAc">+ Yeni Kullanıcı</SfButton>
+</div>
+
+@if (!string.IsNullOrEmpty(_mesaj))
+{
+    <div class="ss-alert @(_hata ? "ss-alert-danger" : "ss-alert-success")">@_mesaj</div>
+}
+
+@if (_yukleniyor)
+{
+    <div class="ss-loading"><span class="ss-splash-spinner" style="width:20px;height:20px;border-width:2px;display:inline-block;margin-right:8px"></span>Yükleniyor...</div>
+}
+else
+{
+    <div class="ss-card">
+        <SfGrid DataSource="@_kullanicilar" AllowPaging="true" AllowSorting="true" AllowFiltering="true">
+            <GridFilterSettings Type="Syncfusion.Blazor.Grids.FilterType.Menu" />
+            <GridPageSettings PageSize="15" />
+            <GridColumns>
+                <GridColumn Field="AdSoyad" HeaderText="Ad Soyad" Width="180" />
+                <GridColumn Field="Email" HeaderText="E-Posta" Width="220" />
+                <GridColumn HeaderText="Roller" Width="160">
+                    <Template>
+                        @{
+                            var u = (KullaniciDto)context;
+                        }
+                        @foreach (var r in u.Roller)
+                        {
+                            <span class="ss-badge ss-badge-primary" style="margin-right:2px">@r</span>
+                        }
+                    </Template>
+                </GridColumn>
+                <GridColumn Field="EkipAdi" HeaderText="Ekip" Width="140" />
+                <GridColumn HeaderText="Durum" Width="100" TextAlign="TextAlign.Center">
+                    <Template>
+                        @{
+                            var u = (KullaniciDto)context;
+                        }
+                        <span class="ss-badge @(u.AktifMi ? "ss-badge-success" : "ss-badge-muted")">
+                            @(u.AktifMi ? "Aktif" : "Pasif")
+                        </span>
+                    </Template>
+                </GridColumn>
+                <GridColumn HeaderText="İşlemler" Width="160" TextAlign="TextAlign.Center">
+                    <Template>
+                        @{
+                            var u = (KullaniciDto)context;
+                            var aktifBtnRenk = u.AktifMi ? "color:var(--danger)" : "color:var(--success)";
+                        }
+                        <SfButton CssClass="e-small e-outline" style="margin-right:4px" @onclick="@(() => DuzenleAc(u))">✏️</SfButton>
+                        <SfButton CssClass="e-small e-outline" style="@aktifBtnRenk"
+                                  @onclick="@(async () => await AktifToggle(u))">
+                            @(u.AktifMi ? "Pasifleştir" : "Aktifleştir")
+                        </SfButton>
+                    </Template>
+                </GridColumn>
+            </GridColumns>
+        </SfGrid>
+    </div>
+}
+
+<!-- Yeni/Düzenle Dialog -->
+<SfDialog @bind-Visible="_dialogAcik" Header="@(_duzenleId == null ? "Yeni Kullanıcı" : "Kullanıcı Düzenle")"
+          Width="440px" ShowCloseIcon="true">
+    <DialogTemplates>
+        <Content>
+            <div class="ss-form-group">
+                <label>Ad Soyad *</label>
+                <SfTextBox @bind-Value="_adSoyad" />
+            </div>
+            <div class="ss-form-group">
+                <label>E-Posta *</label>
+                <SfTextBox @bind-Value="_email" Type="InputType.Email" />
+            </div>
+            <div class="ss-form-group">
+                <label>@(_duzenleId == null ? "Şifre *" : "Yeni Şifre (boş bırakılırsa değişmez)")</label>
+                <SfTextBox @bind-Value="_sifre" Type="InputType.Password" />
+            </div>
+            <div class="ss-form-group">
+                <label>Rol *</label>
+                <SfDropDownList DataSource="@_roller" @bind-Value="_rol" TValue="string" TItem="string">
+                    <DropDownListFieldSettings Value="Text" Text="Text"></DropDownListFieldSettings>
+                </SfDropDownList>
+            </div>
+        </Content>
+        <FooterTemplate>
+            <SfButton CssClass="e-outline" @onclick="@(() => _dialogAcik = false)">İptal</SfButton>
+            <SfButton CssClass="e-primary" Disabled="@_islemYukleniyor" @onclick="Kaydet">
+                @(_islemYukleniyor ? "Kaydediliyor..." : "Kaydet")
+            </SfButton>
+        </FooterTemplate>
+    </DialogTemplates>
+</SfDialog>
+
+@code {
+    private bool _yukleniyor = true;
+    private IEnumerable<KullaniciDto> _kullanicilar = [];
+    private string _mesaj = "";
+    private bool _hata = false;
+
+    private bool _dialogAcik = false;
+    private string? _duzenleId = null;
+    private string _adSoyad = "", _email = "", _sifre = "", _rol = "SayimEkibi";
+    private bool _islemYukleniyor = false;
+    private List<string> _roller = ["Admin", "SayimSorumlusu", "SayimEkibi"];
+
+    protected override async Task OnInitializedAsync() => await Yukle();
+
+    private async Task Yukle()
+    {
+        _yukleniyor = true;
+        _kullanicilar = await KullaniciService.GetAllAsync();
+        _yukleniyor = false;
+    }
+
+    private void YeniKullaniciAc()
+    {
+        _duzenleId = null; _adSoyad = ""; _email = ""; _sifre = ""; _rol = "SayimEkibi";
+        _dialogAcik = true;
+    }
+
+    private void DuzenleAc(KullaniciDto u)
+    {
+        _duzenleId = u.Id; _adSoyad = u.AdSoyad; _email = u.Email;
+        _sifre = ""; _rol = u.Roller.FirstOrDefault() ?? "SayimEkibi";
+        _dialogAcik = true;
+    }
+
+    private async Task Kaydet()
+    {
+        if (string.IsNullOrWhiteSpace(_adSoyad) || string.IsNullOrWhiteSpace(_email))
+        { _mesaj = "Ad soyad ve e-posta zorunludur."; _hata = true; return; }
+        if (_duzenleId == null && string.IsNullOrWhiteSpace(_sifre))
+        { _mesaj = "Yeni kullanıcı için şifre zorunludur."; _hata = true; return; }
+
+        _islemYukleniyor = true;
+        try
+        {
+            if (_duzenleId == null)
+                await KullaniciService.CreateAsync(new KullaniciOlusturDto(_adSoyad, _email, _sifre, _rol));
+            else
+                await KullaniciService.UpdateAsync(_duzenleId, new KullaniciGuncelleDto(_adSoyad, _email, string.IsNullOrWhiteSpace(_sifre) ? null : _sifre, _rol));
+
+            _dialogAcik = false;
+            _mesaj = "Kaydedildi."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+        finally { _islemYukleniyor = false; }
+    }
+
+    private async Task AktifToggle(KullaniciDto u)
+    {
+        try
+        {
+            await KullaniciService.SetAktifAsync(u.Id, !u.AktifMi);
+            _mesaj = $"{u.AdSoyad} {(!u.AktifMi ? "aktifleştirildi" : "pasifleştirildi")}."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+    }
+}

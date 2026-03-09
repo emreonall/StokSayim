@@ -1,0 +1,343 @@
+@page "/sayim-planlari/{Id:int}"
+@attribute [Authorize]
+@inject ISayimPlaniHttpService PlanService
+@inject IBolgeHttpService BolgeService
+@inject ISayimOturumuHttpService OturumuService
+@inject NavigationManager Nav
+
+<PageTitle>Plan Detayı</PageTitle>
+
+@if (_yukleniyor)
+{
+    <div class="ss-loading"><SfSpinner Visible="true" /> Yükleniyor...</div>
+}
+else if (_plan == null)
+{
+    <div class="ss-alert ss-alert-danger">Plan bulunamadı.</div>
+}
+else
+{
+    <div class="ss-page-header">
+        <div>
+            <h1 class="ss-page-title">@_plan.PlanAdi</h1>
+            <p class="ss-page-subtitle">
+                @_plan.BaslangicTarihi.ToString("dd.MM.yyyy") — @_plan.BitisTarihi.ToString("dd.MM.yyyy")
+                &nbsp;·&nbsp;
+                @{
+                    var (cls, txt) = DurumBilgi(_plan.Durum);
+                }
+                <span class="ss-badge @cls">@txt</span>
+            </p>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+            <SfButton CssClass="e-outline" @onclick="@(() => Nav.NavigateTo("/sayim-planlari"))">
+                ← Geri
+            </SfButton>
+            @if (_plan.Durum == SayimPlaniDurum.Taslak)
+            {
+                <AuthorizeView Roles="Admin,SayimSorumlusu">
+                    <SfButton CssClass="e-outline" @onclick="@(() => Nav.NavigateTo($"/sayim-planlari/{Id}/duzenle"))">
+                        ✏️ Düzenle
+                    </SfButton>
+                    <SfButton CssClass="e-primary" @onclick="AktifEt">
+                        ▶ Aktif Et
+                    </SfButton>
+                </AuthorizeView>
+            }
+            @if (_plan.Durum == SayimPlaniDurum.SayimTamamlandi)
+            {
+                <AuthorizeView Roles="Admin,SayimSorumlusu">
+                    <SfButton CssClass="e-primary" @onclick="ErpKarsilastirmaBaslat">
+                        📊 ERP Karşılaştırma Başlat
+                    </SfButton>
+                </AuthorizeView>
+            }
+            @if (_plan.Durum == SayimPlaniDurum.Kapali)
+            {
+                <SfButton CssClass="e-outline" @onclick="@(() => Nav.NavigateTo($"/raporlar/{Id}"))">
+                    📊 Rapor Gör
+                </SfButton>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_mesaj))
+    {
+        <div class="ss-alert @(_hata ? "ss-alert-danger" : "ss-alert-success")">@_mesaj</div>
+    }
+
+    <SfTab>
+        <TabItems>
+            <!-- Genel Bilgiler -->
+            <TabItem>
+                <ChildContent>
+                    <TabHeader Text="📋 Genel Bilgiler" />
+                </ChildContent>
+                <ContentTemplate>
+                    <div style="padding-top:16px">
+                        <div class="ss-grid-2">
+                            <div class="ss-card">
+                                <div class="ss-card-title">Plan Bilgileri</div>
+                                <table style="width:100%; border-collapse:collapse">
+                                    <tr><td style="padding:6px 0; color:var(--muted); width:140px">Plan Adı</td><td style="font-weight:600">@_plan.PlanAdi</td></tr>
+                                    <tr><td style="padding:6px 0; color:var(--muted)">Açıklama</td><td>@(_plan.Aciklama ?? "—")</td></tr>
+                                    <tr><td style="padding:6px 0; color:var(--muted)">Başlangıç</td><td>@_plan.BaslangicTarihi.ToString("dd.MM.yyyy")</td></tr>
+                                    <tr><td style="padding:6px 0; color:var(--muted)">Bitiş</td><td>@_plan.BitisTarihi.ToString("dd.MM.yyyy")</td></tr>
+                                    <tr><td style="padding:6px 0; color:var(--muted)">Durum</td><td><span class="ss-badge @DurumBilgi(_plan.Durum).cls">@DurumBilgi(_plan.Durum).txt</span></td></tr>
+                                    <tr><td style="padding:6px 0; color:var(--muted)">Oluşturulma</td><td>@_plan.OlusturmaTarihi.ToString("dd.MM.yyyy HH:mm")</td></tr>
+                                </table>
+                            </div>
+                            <div class="ss-card">
+                                <div class="ss-card-title">Kapsam & ERP</div>
+                                <div style="margin-bottom:12px">
+                                    <div style="font-size:12px; color:var(--muted); margin-bottom:6px">Dahil Depo Kodları</div>
+                                    <div style="display:flex; flex-wrap:wrap; gap:4px">
+                                        @foreach (var kod in _plan.DepoKodlari)
+                                        {
+                                            <span class="ss-badge ss-badge-primary">@kod</span>
+                                        }
+                                    </div>
+                                </div>
+                                <hr class="ss-divider" />
+                                <div>
+                                    <div style="font-size:12px; color:var(--muted)">ERP Stok Kayıt Sayısı</div>
+                                    <div style="font-size:24px; font-weight:700; color:var(--text)">@_plan.ErpStokSatirSayisi.ToString("N0")</div>
+                                    @if (_plan.ErpImportTarihi.HasValue)
+                                    {
+                                        <div style="font-size:12px; color:var(--muted)">Son import: @_plan.ErpImportTarihi.Value.ToString("dd.MM.yyyy HH:mm")</div>
+                                    }
+                                </div>
+                                @if (_plan.Durum == SayimPlaniDurum.Taslak)
+                                {
+                                    <hr class="ss-divider" />
+                                    <AuthorizeView Roles="Admin,SayimSorumlusu">
+                                        <div style="font-size:13px; font-weight:600; margin-bottom:8px">ERP Stok İmport</div>
+                                        <InputFile OnChange="DosyaSec" accept=".xlsx,.xls" style="margin-bottom:8px; display:block" />
+                                        <SfButton CssClass="e-outline" Disabled="@(_seciliDosya == null || _importYukleniyor)"
+                                                  @onclick="ErpImport">
+                                            @(_importYukleniyor ? "Yükleniyor..." : "📤 Import Et")
+                                        </SfButton>
+                                        @if (_importSonuc != null)
+                                        {
+                                            <div class="ss-alert @(_importSonuc.Basarili ? "ss-alert-success" : "ss-alert-warn")" style="margin-top:8px">
+                                                ✅ @_importSonuc.EklenenSatir satır eklendi, @_importSonuc.HataliSatir hatalı
+                                            </div>
+                                        }
+                                    </AuthorizeView>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </ContentTemplate>
+            </TabItem>
+
+            <!-- Bölgeler -->
+            <TabItem>
+                <ChildContent>
+                    <TabHeader Text="🗺️ Bölgeler" />
+                </ChildContent>
+                <ContentTemplate>
+                    <div style="padding-top:16px">
+                        <div style="display:flex; justify-content:flex-end; margin-bottom:16px; gap:8px">
+                            @if (_plan.Durum == SayimPlaniDurum.Aktif)
+                            {
+                                <SfButton CssClass="e-outline" @onclick="@(() => Nav.NavigateTo($"/sayim-takip/{Id}"))">
+                                    🔍 Sayım Takip
+                                </SfButton>
+                            }
+                            <AuthorizeView Roles="Admin,SayimSorumlusu">
+                                @if (_plan.Durum == SayimPlaniDurum.Taslak)
+                                {
+                                    <SfButton CssClass="e-primary" @onclick="BolgeEkleAc">
+                                        + Bölge Ekle
+                                    </SfButton>
+                                }
+                            </AuthorizeView>
+                        </div>
+
+                        @if (!_bolgeler.Any())
+                        {
+                            <div class="ss-empty">
+                                <div class="ss-empty-icon">🗺️</div>
+                                <div class="ss-empty-text">Henüz bölge eklenmemiş</div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="ss-bolge-grid">
+                                @foreach (var bolge in _bolgeler)
+                                {
+                                    var renk = bolge.OturumDurum switch
+                                    {
+                                        "DevamEdiyor" => "aktif",
+                                        "Onaylandi" or "ManuelKarar" => "onaylandi",
+                                        _ => "beklemede"
+                                    };
+                                    <div class="ss-bolge-card @renk"
+                                         @onclick="@(() => Nav.NavigateTo($"/bolgeler/{bolge.Id}"))">
+                                        <div class="ss-bolge-title">@bolge.BolgeAdi</div>
+                                        <div class="ss-bolge-kod">@bolge.BolgeKodu</div>
+                                        <div class="ss-bolge-meta">
+                                            @if (bolge.EkipGrubuVarMi)
+                                            {
+                                                <span class="ss-badge ss-badge-success">✓ Ekip atandı</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="ss-badge ss-badge-warn">⚠ Ekip yok</span>
+                                            }
+                                            @if (bolge.SayimOturumuVarMi)
+                                            {
+                                                <span class="ss-badge ss-badge-accent">@bolge.OturumDurum</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="ss-badge ss-badge-muted">Başlamadı</span>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </ContentTemplate>
+            </TabItem>
+        </TabItems>
+    </SfTab>
+}
+
+<!-- Bölge Ekle Dialog -->
+<SfDialog @bind-Visible="_bolgeDialogAcik" Header="Yeni Bölge Ekle" Width="420px" ShowCloseIcon="true">
+    <DialogTemplates>
+        <Content>
+            <div class="ss-form-group">
+                <label>Bölge Kodu *</label>
+                <SfTextBox @bind-Value="_yeniBolgeKodu" Placeholder="Örn: ZK01" />
+            </div>
+            <div class="ss-form-group">
+                <label>Bölge Adı *</label>
+                <SfTextBox @bind-Value="_yeniBolgeAdi" Placeholder="Örn: Zemin Kat Depo" />
+            </div>
+            <div class="ss-form-group">
+                <label>Açıklama</label>
+                <SfTextBox @bind-Value="_yeniBolgeAciklama" Multiline="true" />
+            </div>
+        </Content>
+        <FooterTemplate>
+            <SfButton CssClass="e-outline" @onclick="@(() => _bolgeDialogAcik = false)">İptal</SfButton>
+            <SfButton CssClass="e-primary" @onclick="BolgeKaydet">Kaydet</SfButton>
+        </FooterTemplate>
+    </DialogTemplates>
+</SfDialog>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private bool _yukleniyor = true;
+    private SayimPlaniDetayDto? _plan;
+    private IEnumerable<BolgeDto> _bolgeler = [];
+    private string _mesaj = "";
+    private bool _hata = false;
+
+    // ERP Import
+    private IBrowserFile? _seciliDosya;
+    private bool _importYukleniyor = false;
+    private ErpImportSonucDto? _importSonuc;
+
+    // Bölge dialog
+    private bool _bolgeDialogAcik = false;
+    private string _yeniBolgeKodu = "";
+    private string _yeniBolgeAdi = "";
+    private string? _yeniBolgeAciklama;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Yukle();
+    }
+
+    private async Task Yukle()
+    {
+        _yukleniyor = true;
+        _plan = await PlanService.GetByIdAsync(Id);
+        _bolgeler = await BolgeService.GetByPlanAsync(Id);
+        _yukleniyor = false;
+    }
+
+    private async Task AktifEt()
+    {
+        try
+        {
+            await PlanService.AktifEtAsync(Id);
+            _mesaj = "Plan aktif edildi."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+    }
+
+    private async Task ErpKarsilastirmaBaslat()
+    {
+        try
+        {
+            await OturumuService.ErpKarsilastirmaBaslatAsync(Id);
+            _mesaj = "ERP karşılaştırması başlatıldı."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+    }
+
+    private void DosyaSec(InputFileChangeEventArgs e) => _seciliDosya = e.File;
+
+    private async Task ErpImport()
+    {
+        if (_seciliDosya == null) return;
+        _importYukleniyor = true;
+        try
+        {
+            using var ms = new MemoryStream();
+            await _seciliDosya.OpenReadStream(maxAllowedSize: 20 * 1024 * 1024).CopyToAsync(ms);
+            ms.Seek(0, SeekOrigin.Begin);
+
+            var form = new MultipartFormDataContent();
+            form.Add(new StreamContent(ms), "dosya", _seciliDosya.Name);
+            _importSonuc = await PlanService.ImportErpAsync(Id, form);
+            if (_importSonuc?.Basarili == true) await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+        finally { _importYukleniyor = false; }
+    }
+
+    private void BolgeEkleAc()
+    {
+        _yeniBolgeKodu = "";
+        _yeniBolgeAdi = "";
+        _yeniBolgeAciklama = null;
+        _bolgeDialogAcik = true;
+    }
+
+    private async Task BolgeKaydet()
+    {
+        if (string.IsNullOrWhiteSpace(_yeniBolgeKodu) || string.IsNullOrWhiteSpace(_yeniBolgeAdi))
+        {
+            _mesaj = "Bölge kodu ve adı zorunludur."; _hata = true; return;
+        }
+        try
+        {
+            var dto = new BolgeOlusturDto(Id, _yeniBolgeKodu, _yeniBolgeAdi, _yeniBolgeAciklama);
+            await BolgeService.CreateAsync(dto);
+            _bolgeDialogAcik = false;
+            _mesaj = "Bölge eklendi."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+    }
+
+    private (string cls, string txt) DurumBilgi(SayimPlaniDurum d) => d switch
+    {
+        SayimPlaniDurum.Taslak => ("ss-badge-muted", "Taslak"),
+        SayimPlaniDurum.Aktif => ("ss-badge-accent", "Aktif"),
+        SayimPlaniDurum.SayimTamamlandi => ("ss-badge-primary", "Sayım Bitti"),
+        SayimPlaniDurum.ErpKarsilastirmaAktif => ("ss-badge-warn", "ERP Karş."),
+        SayimPlaniDurum.Kapali => ("ss-badge-success", "Kapalı"),
+        _ => ("ss-badge-muted", d.ToString())
+    };
+}

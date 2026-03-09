@@ -1,0 +1,106 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Nav
+@inject IAuthHttpService AuthService
+@inject AuthenticationStateProvider AuthProvider
+@inject ISayimOturumuHttpService OturumuService
+
+<div class="ss-layout">
+    <!-- Sidebar -->
+    <aside class="ss-sidebar">
+        <div class="ss-sidebar-logo">
+            <div class="ss-sidebar-logo-icon">📦</div>
+            <div>
+                <div class="ss-sidebar-logo-text">Stok Sayım</div>
+                <div class="ss-sidebar-logo-sub">Yönetim Sistemi</div>
+            </div>
+        </div>
+
+        <nav class="ss-sidebar-nav">
+            <div class="ss-nav-section">Genel</div>
+            <NavLink class="ss-nav-item" href="/" Match="NavLinkMatch.All">
+                <span class="nav-icon">🏠</span> Dashboard
+            </NavLink>
+
+            <div class="ss-nav-section">Sayım</div>
+            <NavLink class="ss-nav-item" href="/sayim-planlari">
+                <span class="nav-icon">📋</span> Sayım Planları
+            </NavLink>
+            <NavLink class="ss-nav-item" href="/sayim-takip">
+                <span class="nav-icon">🔍</span> Sayım Takip
+            </NavLink>
+            <NavLink class="ss-nav-item" href="/bekleyen-isler">
+                <span class="nav-icon">⚠️</span> Bekleyen İşler
+                @if (_bekleyenSayi > 0)
+                {
+                    <span class="ss-nav-badge warn">@_bekleyenSayi</span>
+                }
+            </NavLink>
+
+            <div class="ss-nav-section">Raporlar</div>
+            <NavLink class="ss-nav-item" href="/raporlar">
+                <span class="nav-icon">📊</span> Raporlar
+            </NavLink>
+
+            <AuthorizeView Roles="Admin">
+                <div class="ss-nav-section">Yönetim</div>
+                <NavLink class="ss-nav-item" href="/admin/kullanicilar">
+                    <span class="nav-icon">👥</span> Kullanıcılar
+                </NavLink>
+                <NavLink class="ss-nav-item" href="/admin/ekipler">
+                    <span class="nav-icon">🏷️</span> Ekipler
+                </NavLink>
+            </AuthorizeView>
+        </nav>
+
+        <div class="ss-sidebar-footer">
+            <AuthorizeView>
+                <div class="ss-user-name">@context.User.FindFirst("adSoyad")?.Value</div>
+                <div>@(context.User.IsInRole("Admin") ? "Yönetici" : context.User.IsInRole("SayimSorumlusu") ? "Sayım Sorumlusu" : "Sayım Ekibi")</div>
+            </AuthorizeView>
+            <button class="ss-nav-item" style="margin-top:8px; color:rgba(255,255,255,0.6)" @onclick="Cikis">
+                <span class="nav-icon">🚪</span> Çıkış
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="ss-main">
+        <div class="ss-content">
+            @Body
+        </div>
+    </main>
+</div>
+
+@code {
+    private int _bekleyenSayi = 0;
+    private System.Threading.Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await YukleBeleyenler();
+        _timer = new System.Threading.Timer(async _ =>
+        {
+            await YukleBeleyenler();
+            await InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private async Task YukleBeleyenler()
+    {
+        try
+        {
+            var bildirimler = await OturumuService.GetBekleyenBildirimlerAsync();
+            _bekleyenSayi = bildirimler.Count();
+        }
+        catch { }
+    }
+
+    private async Task Cikis()
+    {
+        var provider = (JwtAuthStateProvider)AuthProvider;
+        await provider.LogoutAsync();
+        Nav.NavigateTo("/login");
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}

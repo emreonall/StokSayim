@@ -1,0 +1,193 @@
+@page "/bekleyen-isler"
+@attribute [Authorize(Roles = "Admin,SayimSorumlusu")]
+@inject ISayimOturumuHttpService OturumuService
+@inject IEkipHttpService EkipService
+@inject NavigationManager Nav
+
+<PageTitle>Bekleyen İşler</PageTitle>
+
+<div class="ss-page-header">
+    <div>
+        <h1 class="ss-page-title">Bekleyen İşler</h1>
+        <p class="ss-page-subtitle">Kontrol sayımı ve karar gerektiren işlemler</p>
+    </div>
+    <SfButton CssClass="e-outline" @onclick="Yukle">🔄 Yenile</SfButton>
+</div>
+
+@if (_yukleniyor)
+{
+    <div class="ss-loading"><SfSpinner Visible="true" /> Yükleniyor...</div>
+}
+else if (!_bildirimler.Any())
+{
+    <div class="ss-card">
+        <div class="ss-empty">
+            <div class="ss-empty-icon">✅</div>
+            <div class="ss-empty-text">Bekleyen iş bulunmuyor</div>
+        </div>
+    </div>
+}
+else
+{
+    @if (!string.IsNullOrEmpty(_mesaj))
+    {
+        <div class="ss-alert @(_hata ? "ss-alert-danger" : "ss-alert-success")">@_mesaj</div>
+    }
+
+    <div class="ss-notif-list">
+        @foreach (var b in _bildirimler)
+        {
+            <div class="ss-card" style="border-left: 4px solid @(b.BildirimTipi == GorevBildirimTipi.KontrolSayimiGerekli ? "var(--warn)" : b.BildirimTipi == GorevBildirimTipi.ErpKontrolGerekli ? "var(--primary)" : "var(--danger)"); margin-bottom:12px">
+                <div style="display:flex; align-items:flex-start; gap:16px">
+                    <div style="font-size:28px; padding-top:2px">
+                        @(b.BildirimTipi == GorevBildirimTipi.KontrolSayimiGerekli ? "🔁" :
+                          b.BildirimTipi == GorevBildirimTipi.ManuelKararGerekli ? "⚖️" :
+                          b.BildirimTipi == GorevBildirimTipi.ErpKontrolGerekli ? "📊" : "⚠️")
+                    </div>
+                    <div style="flex:1">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px">
+                            <span style="font-weight:700; font-size:15px">@b.BolgeAdi</span>
+                            <span class="ss-badge ss-badge-warn">Tur @b.TurNo</span>
+                            <span class="ss-badge ss-badge-muted">@b.BildirimTipiAdi</span>
+                        </div>
+                        <div style="font-size:13px; color:var(--muted); margin-bottom:12px">@b.Mesaj</div>
+                        <div style="font-size:11px; color:var(--muted)">@b.OlusturmaTarihi.ToString("dd.MM.yyyy HH:mm")</div>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:6px; flex-shrink:0">
+                        <SfButton CssClass="e-outline e-small" @onclick="@(() => Nav.NavigateTo($"/bolgeler/{b.SayimOturumuId}"))">
+                            Bölgeye Git
+                        </SfButton>
+                        @if (b.BildirimTipi == GorevBildirimTipi.KontrolSayimiGerekli || b.BildirimTipi == GorevBildirimTipi.ErpKontrolGerekli)
+                        {
+                            <SfButton CssClass="e-primary e-small" @onclick="@(() => KontrolTuruAcDialog(b))">
+                                Kontrol Turu Aç
+                            </SfButton>
+                        }
+                        @if (b.BildirimTipi == GorevBildirimTipi.ManuelKararGerekli || b.BildirimTipi == GorevBildirimTipi.ErpManuelKararGerekli)
+                        {
+                            <SfButton CssClass="e-warn e-small" @onclick="@(() => Nav.NavigateTo($"/tur-sonucu/{b.SayimTuruId}"))">
+                                Manuel Karar Ver
+                            </SfButton>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+}
+
+<!-- Kontrol Turu Dialog -->
+<SfDialog @bind-Visible="_kontrolDialogAcik" Header="Kontrol Turu Aç" Width="500px" ShowCloseIcon="true">
+    <DialogTemplates>
+        <Content>
+            @if (_aktifBildirim != null)
+            {
+                <div class="ss-alert ss-alert-info" style="margin-bottom:16px">
+                    <strong>@_aktifBildirim.BolgeAdi</strong> — Tur @_aktifBildirim.TurNo için kontrol sayımı gerekiyor.
+                </div>
+            }
+            <div style="font-size:13px; font-weight:600; margin-bottom:12px">Kontrol Ekiplerini Seçin</div>
+            @foreach (var satir in _kontrolEkipSatirlari)
+            {
+                <div style="display:flex; gap:8px; align-items:flex-end; margin-bottom:8px">
+                    <div class="ss-form-group" style="flex:1; margin-bottom:0">
+                        <label>Ekip</label>
+                        <SfDropDownList DataSource="@_tumEkipler" @bind-Value="satir.EkipId"
+                                        TValue="int" TItem="EkipDto">
+                            <DropDownListFieldSettings Value="Id" Text="EkipAdi"></DropDownListFieldSettings>
+                        </SfDropDownList>
+                    </div>
+                    <div class="ss-form-group" style="width:120px; margin-bottom:0">
+                        <label>Rol</label>
+                        <SfDropDownList DataSource="@_roller" @bind-Value="satir.Rol"
+                                        TValue="EkipRolu" TItem="RolItem">
+                            <DropDownListFieldSettings Value="Deger" Text="Ad"></DropDownListFieldSettings>
+                        </SfDropDownList>
+                    </div>
+                    <SfButton CssClass="e-outline e-small" style="color:var(--danger)"
+                              @onclick="@(() => _kontrolEkipSatirlari.Remove(satir))">×</SfButton>
+                </div>
+            }
+            <SfButton CssClass="e-outline e-small" @onclick="EkipSatirEkle">+ Ekip Ekle</SfButton>
+            <div class="ss-form-group" style="margin-top:16px">
+                <label>Not (İsteğe Bağlı)</label>
+                <SfTextBox @bind-Value="_kontrolNot" Multiline="true" Placeholder="Kontrol sayımı hakkında not..." />
+            </div>
+        </Content>
+        <FooterTemplate>
+            <SfButton CssClass="e-outline" @onclick="@(() => _kontrolDialogAcik = false)">İptal</SfButton>
+            <SfButton CssClass="e-primary" Disabled="@_islemYukleniyor" @onclick="KontrolTuruKaydet">
+                @(_islemYukleniyor ? "Açılıyor..." : "▶ Turu Aç")
+            </SfButton>
+        </FooterTemplate>
+    </DialogTemplates>
+</SfDialog>
+
+@code {
+    private bool _yukleniyor = true;
+    private IEnumerable<GorevBildirimDto> _bildirimler = [];
+    private string _mesaj = "";
+    private bool _hata = false;
+
+    // Kontrol turu dialog
+    private bool _kontrolDialogAcik = false;
+    private GorevBildirimDto? _aktifBildirim;
+    private List<EkipDto> _tumEkipler = [];
+    private List<EkipSatir> _kontrolEkipSatirlari = [];
+    private string _kontrolNot = "";
+    private bool _islemYukleniyor = false;
+    private List<RolItem> _roller = [
+        new(EkipRolu.Birinci, "Birinci"),
+        new(EkipRolu.Ikinci, "İkinci"),
+        new(EkipRolu.Kontrol, "Kontrol")
+    ];
+
+    record EkipSatir { public int EkipId { get; set; } public EkipRolu Rol { get; set; } = EkipRolu.Kontrol; }
+    record RolItem(EkipRolu Deger, string Ad);
+
+    protected override async Task OnInitializedAsync() => await Yukle();
+
+    private async Task Yukle()
+    {
+        _yukleniyor = true;
+        try { _bildirimler = await OturumuService.GetBekleyenBildirimlerAsync(); }
+        catch { }
+        _yukleniyor = false;
+    }
+
+    private async Task KontrolTuruAcDialog(GorevBildirimDto bildirim)
+    {
+        _aktifBildirim = bildirim;
+        _tumEkipler = (await EkipService.GetAllAsync()).ToList();
+        _kontrolEkipSatirlari = [new EkipSatir()];
+        _kontrolNot = "";
+        _kontrolDialogAcik = true;
+    }
+
+    private void EkipSatirEkle() => _kontrolEkipSatirlari.Add(new EkipSatir());
+
+    private async Task KontrolTuruKaydet()
+    {
+        if (_aktifBildirim == null) return;
+        if (!_kontrolEkipSatirlari.Any() || _kontrolEkipSatirlari.Any(e => e.EkipId == 0))
+        {
+            _mesaj = "Tüm ekipler seçilmeli."; _hata = true; return;
+        }
+
+        _islemYukleniyor = true;
+        try
+        {
+            var dto = new KontrolTuruAcDto(
+                _kontrolEkipSatirlari.Select(e => new KontrolEkipDto(e.EkipId, e.Rol)),
+                _kontrolNot.Length == 0 ? null : _kontrolNot
+            );
+            await OturumuService.KontrolTuruAcAsync(_aktifBildirim.SayimOturumuId, dto);
+            _kontrolDialogAcik = false;
+            _mesaj = "Kontrol turu açıldı."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+        finally { _islemYukleniyor = false; }
+    }
+}

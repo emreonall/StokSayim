@@ -1,0 +1,167 @@
+@page "/sayim-takip"
+@page "/sayim-takip/{PlanId:int}"
+@attribute [Authorize]
+@inject ISayimPlaniHttpService PlanService
+@inject IBolgeHttpService BolgeService
+@inject NavigationManager Nav
+
+<PageTitle>Sayım Takip</PageTitle>
+
+<div class="ss-page-header">
+    <div>
+        <h1 class="ss-page-title">Sayım Takip</h1>
+        <p class="ss-page-subtitle">Bölge bazında sayım durumu</p>
+    </div>
+</div>
+
+<!-- Plan Seçimi -->
+<div class="ss-card" style="margin-bottom:16px">
+    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap">
+        <div class="ss-form-group" style="flex:1; min-width:200px; margin-bottom:0">
+            <label>Plan Seç</label>
+            <SfDropDownList DataSource="@_planlar" @bind-Value="_secilenPlanId"
+                            TValue="int" TItem="SayimPlaniListDto"
+                            Placeholder="Plan seçin...">
+                <DropDownListFieldSettings Value="Id" Text="PlanAdi"></DropDownListFieldSettings>
+                <DropDownListEvents TValue="int" TItem="SayimPlaniListDto"
+                                    ValueChange="@(async e => { _secilenPlanId = (int)(e.Value); await YukleBolgeler(); })">
+                </DropDownListEvents>
+            </SfDropDownList>
+        </div>
+        @if (_secilenPlanId > 0)
+        {
+            <SfButton CssClass="e-outline" @onclick="@(() => Nav.NavigateTo($"/sayim-planlari/{_secilenPlanId}"))">
+                Plan Detayına Git →
+            </SfButton>
+        }
+    </div>
+</div>
+
+@if (_secilenPlanId == 0)
+{
+    <div class="ss-empty"><div class="ss-empty-icon">📋</div><div class="ss-empty-text">Yukarıdan bir plan seçin</div></div>
+}
+else if (_bolgeYukleniyor)
+{
+    <div class="ss-loading"><SfSpinner Visible="true" /> Bölgeler yükleniyor...</div>
+}
+else
+{
+    <!-- Özet istatistikler -->
+    <div class="ss-stats" style="margin-bottom:16px">
+        <div class="ss-stat">
+            <div class="ss-stat-label">Toplam Bölge</div>
+            <div class="ss-stat-value">@_bolgeler.Count()</div>
+        </div>
+        <div class="ss-stat success">
+            <div class="ss-stat-label">Tamamlanan</div>
+            <div class="ss-stat-value">@_bolgeler.Count(b => b.OturumDurum is "Onaylandi" or "ManuelKarar")</div>
+        </div>
+        <div class="ss-stat primary">
+            <div class="ss-stat-label">Devam Eden</div>
+            <div class="ss-stat-value">@_bolgeler.Count(b => b.OturumDurum == "DevamEdiyor")</div>
+        </div>
+        <div class="ss-stat warn">
+            <div class="ss-stat-label">Başlamadı</div>
+            <div class="ss-stat-value">@_bolgeler.Count(b => !b.SayimOturumuVarMi)</div>
+        </div>
+    </div>
+
+    <!-- İlerleme Çubuğu -->
+    <div class="ss-card" style="margin-bottom:16px">
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px">
+            <span style="font-size:13px; font-weight:600">Genel İlerleme</span>
+            <span style="font-size:13px; color:var(--muted)">%@IlerlemeYuzdesi</span>
+        </div>
+        <div class="ss-progress">
+            <div class="ss-progress-fill" style="width:@IlerlemeYuzdesi%"></div>
+        </div>
+    </div>
+
+    <!-- Bölge Kartları -->
+    @if (!_bolgeler.Any())
+    {
+        <div class="ss-empty"><div class="ss-empty-icon">🗺️</div><div class="ss-empty-text">Bu planda bölge yok</div></div>
+    }
+    else
+    {
+        <div class="ss-bolge-grid">
+            @foreach (var bolge in _bolgeler)
+            {
+                var renk = bolge.OturumDurum switch
+                {
+                    "DevamEdiyor" => "aktif",
+                    "Onaylandi" or "ManuelKarar" => "onaylandi",
+                    _ => "beklemede"
+                };
+                <div class="ss-bolge-card @renk cursor-pointer"
+                     @onclick="@(() => Nav.NavigateTo($"/bolgeler/{bolge.Id}"))">
+                    <div class="ss-bolge-title">@bolge.BolgeAdi</div>
+                    <div class="ss-bolge-kod">@bolge.BolgeKodu</div>
+                    <div class="ss-bolge-meta">
+                        @{
+                            var ikon = bolge.OturumDurum switch
+                            {
+                                "Onaylandi" => "✅",
+                                "ManuelKarar" => "⚖️",
+                                "DevamEdiyor" => "🔄",
+                                _ => "⏳"
+                            };
+                            var (cls, lbl) = bolge.OturumDurum switch
+                            {
+                                "Onaylandi" => ("ss-badge-success", "Onaylandı"),
+                                "ManuelKarar" => ("ss-badge-warn", "Manuel Karar"),
+                                "DevamEdiyor" => ("ss-badge-accent", "Devam Ediyor"),
+                                _ => ("ss-badge-muted", "Başlamadı")
+                            };
+                        }
+                        <span>@ikon</span>
+                        <span class="ss-badge @cls">@lbl</span>
+                        @if (!bolge.EkipGrubuVarMi)
+                        {
+                            <span class="ss-badge ss-badge-danger">Ekip yok</span>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public int PlanId { get; set; }
+
+    private IEnumerable<SayimPlaniListDto> _planlar = [];
+    private IEnumerable<BolgeDto> _bolgeler = [];
+    private int _secilenPlanId;
+    private bool _bolgeYukleniyor = false;
+
+    private int IlerlemeYuzdesi
+    {
+        get
+        {
+            var toplam = _bolgeler.Count();
+            if (toplam == 0) return 0;
+            var tamamlanan = _bolgeler.Count(b => b.OturumDurum is "Onaylandi" or "ManuelKarar");
+            return (int)((double)tamamlanan / toplam * 100);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _planlar = await PlanService.GetAllAsync();
+        if (PlanId > 0)
+        {
+            _secilenPlanId = PlanId;
+            await YukleBolgeler();
+        }
+    }
+
+    private async Task YukleBolgeler()
+    {
+        if (_secilenPlanId == 0) return;
+        _bolgeYukleniyor = true;
+        _bolgeler = await BolgeService.GetByPlanAsync(_secilenPlanId);
+        _bolgeYukleniyor = false;
+    }
+}

@@ -37,3 +37,9 @@ public record SayimKaydiDetayEkleDto(
     string Birim,
     string? Notlar
 );
+public record TopluDetayEkleSonucDto(
+    int KaydiId,
+    int EklenenSatir,
+    int HataliSatir,
+    List<string> Hatalar
+);

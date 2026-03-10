@@ -369,6 +369,17 @@ public class SayimKaydiController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("{id}/detaylar-toplu")]
+    [Authorize(Roles = "SayimEkibi,Admin,SayimSorumlusu")]
+    public async Task<IActionResult> TopluDetayEkle(int id, [FromBody] IEnumerable<SayimKaydiDetayEkleDto> detaylar, CancellationToken ct)
+    {
+        if (detaylar == null || !detaylar.Any())
+            return BadRequest(new { mesaj = "Detay listesi boş olamaz." });
+
+        var result = await _service.TopluDetayEkleAsync(id, detaylar, ct);
+        return Ok(result);
+    }
+
     [HttpPost("{id}/tamamla")]
     [Authorize(Roles = "SayimEkibi,Admin,SayimSorumlusu")]
     public async Task<IActionResult> Tamamla(int id, CancellationToken ct)

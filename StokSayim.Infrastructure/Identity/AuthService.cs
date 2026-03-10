@@ -177,4 +177,85 @@ public class AuthService : IAuthService
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
+
+    public async Task<AktifGorevlerDto> GetAktifGorevlerAsync(string kullaniciId, CancellationToken ct = default)
+    {
+        var user = await _userManager.FindByIdAsync(kullaniciId);
+        if (user == null)
+            return new AktifGorevlerDto(kullaniciId, string.Empty, []);
+
+        // Kullanıcının tüm aktif ekiplerini bul
+        var ekipIdleri = await _db.Set<EkipKullanici>()
+            .Where(ek => ek.KullaniciId == kullaniciId && ek.AktifMi)
+            .Select(ek => ek.EkipId)
+            .ToListAsync(ct);
+
+        if (!ekipIdleri.Any())
+            return new AktifGorevlerDto(kullaniciId, user.AdSoyad, []);
+
+        // Her ekibin bağlı olduğu EkipGrubu → Bölge → SayimOturumu → aktif tur zinciri
+        var ekipGrubuEkipler = await _db.Set<EkipGrubuEkip>()
+            .Include(x => x.Ekip)
+            .Include(x => x.EkipGrubu)
+                .ThenInclude(g => g.Bolge)
+                    .ThenInclude(b => b.SayimOturumu)
+                        .ThenInclude(o => o!.SayimTurlari)
+                            .ThenInclude(t => t.Katilimcilar)
+            .Where(x => ekipIdleri.Contains(x.EkipId))
+            .ToListAsync(ct);
+
+        var secenekler = new List<GorevSecenekDto>();
+
+        foreach (var ege in ekipGrubuEkipler)
+        {
+            var bolge = ege.EkipGrubu.Bolge;
+            var oturum = bolge?.SayimOturumu;
+            if (oturum == null) continue;
+
+            // Aktif tur: Beklemede, DevamEdiyor veya KarsilastirmaBekliyor
+            var aktifTur = oturum.SayimTurlari
+                .Where(t => t.Durum == SayimTuruDurum.Beklemede ||
+                            t.Durum == SayimTuruDurum.DevamEdiyor ||
+                            t.Durum == SayimTuruDurum.KarsilastirmaBekliyor)
+                .OrderByDescending(t => t.TurNo)
+                .FirstOrDefault();
+
+            if (aktifTur == null) continue;
+
+            // Bu ekip bu turda katılımcı mı?
+            var katilimci = aktifTur.Katilimcilar.FirstOrDefault(k => k.EkipId == ege.EkipId);
+            if (katilimci == null) continue;
+
+            // Sayım kaydının durumu
+            string? kaydiDurum = null;
+            bool tamamlandi = false;
+            if (katilimci.SayimKaydiId.HasValue)
+            {
+                var kaydi = await _db.Set<SayimKaydi>()
+                    .Where(k => k.Id == katilimci.SayimKaydiId.Value)
+                    .Select(k => new { k.Durum })
+                    .FirstOrDefaultAsync(ct);
+                kaydiDurum = kaydi?.Durum.ToString();
+                tamamlandi = kaydi?.Durum == SayimKaydiDurum.Tamamlandi;
+            }
+
+            secenekler.Add(new GorevSecenekDto(
+                EkipId: ege.EkipId,
+                EkipAdi: ege.Ekip.EkipAdi,
+                EkipRolu: new EkipRoluDto((int)ege.EkipRolu, RolAdi(ege.EkipRolu)),
+                BolgeId: bolge!.Id,
+                BolgeAdi: bolge.BolgeAdi,
+                BolgeKodu: bolge.BolgeKodu,
+                SayimOturumuId: oturum.Id,
+                SayimTuruId: aktifTur.Id,
+                TurNo: aktifTur.TurNo,
+                TurTipi: aktifTur.TurTipi.ToString(),
+                SayimKaydiId: katilimci.SayimKaydiId,
+                SayimKaydiDurum: kaydiDurum,
+                SayimTamamlandi: tamamlandi
+            ));
+        }
+
+        return new AktifGorevlerDto(kullaniciId, user.AdSoyad, secenekler);
+    }
 }

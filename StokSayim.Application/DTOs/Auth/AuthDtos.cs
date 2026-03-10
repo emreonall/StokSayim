@@ -54,3 +54,26 @@ public record KullaniciGuncelleDto(
     string? YeniSifre,
     string Rol
 );
+// Kullanıcının seçebileceği tek bir bölge/tur görevi
+public record GorevSecenekDto(
+    int EkipId,
+    string EkipAdi,
+    EkipRoluDto EkipRolu,
+    int BolgeId,
+    string BolgeAdi,
+    string BolgeKodu,
+    int SayimOturumuId,
+    int SayimTuruId,
+    int TurNo,
+    string TurTipi,
+    int? SayimKaydiId,
+    string? SayimKaydiDurum,
+    bool SayimTamamlandi
+);
+
+// Login sonrası dönen — seçim listesi
+public record AktifGorevlerDto(
+    string KullaniciId,
+    string AdSoyad,
+    List<GorevSecenekDto> Secenekler
+);

@@ -226,9 +226,68 @@ public class SayimKaydiService : ISayimKaydiService
             Notlar = request.Notlar
         };
 
-        // ✅ FIX: detay kaydi'ya ekleniyor, önce kaydi tekrar Add ediliyordu
-        kaydi.Detaylar.Add(detay);
+        // GetByIdAsync Detaylar navigation property'sini include etmediği için
+        // kaydi.Detaylar.Add(detay) EF tarafından izlenmiyor — detay direkt AddAsync ile ekleniyor
+        await _uow.SayimKayitlari.AddDetayAsync(detay, ct);
         await _uow.SaveChangesAsync(ct);
+    }
+
+    public async Task<TopluDetayEkleSonucDto> TopluDetayEkleAsync(int kaydiId, IEnumerable<SayimKaydiDetayEkleDto> detaylar, CancellationToken ct = default)
+    {
+        var kaydi = await _uow.SayimKayitlari.GetByIdAsync(kaydiId, ct)
+            ?? throw new KeyNotFoundException($"Sayım kaydı bulunamadı: {kaydiId}");
+
+        if (kaydi.Durum == SayimKaydiDurum.Tamamlandi)
+            throw new InvalidOperationException("Tamamlanmış kayda satır eklenemez.");
+
+        var hatalar = new List<string>();
+        var eklenecekler = new List<SayimKaydiDetay>();
+        var satirNo = 0;
+
+        foreach (var dto in detaylar)
+        {
+            satirNo++;
+            if (string.IsNullOrWhiteSpace(dto.MalzemeKodu))
+            {
+                hatalar.Add($"Satır {satirNo}: Malzeme kodu boş olamaz.");
+                continue;
+            }
+            if (dto.SayilanMiktar <= 0)
+            {
+                hatalar.Add($"Satır {satirNo}: Miktar sıfırdan büyük olmalıdır. (Malzeme: {dto.MalzemeKodu})");
+                continue;
+            }
+            if (string.IsNullOrWhiteSpace(dto.Birim))
+            {
+                hatalar.Add($"Satır {satirNo}: Birim boş olamaz. (Malzeme: {dto.MalzemeKodu})");
+                continue;
+            }
+
+            eklenecekler.Add(new SayimKaydiDetay
+            {
+                SayimKaydiId = kaydiId,
+                MalzemeKodu = dto.MalzemeKodu.Trim().ToUpper(),
+                MalzemeAdi = dto.MalzemeAdi?.Trim() ?? string.Empty,
+                LotNo = string.IsNullOrWhiteSpace(dto.LotNo) ? null : dto.LotNo.Trim(),
+                SeriNo = string.IsNullOrWhiteSpace(dto.SeriNo) ? null : dto.SeriNo.Trim(),
+                SayilanMiktar = dto.SayilanMiktar,
+                Birim = dto.Birim.Trim().ToUpper(),
+                Notlar = dto.Notlar
+            });
+        }
+
+        if (eklenecekler.Any())
+        {
+            await _uow.SayimKayitlari.AddDetayRangeAsync(eklenecekler, ct);
+            await _uow.SaveChangesAsync(ct);
+        }
+
+        return new TopluDetayEkleSonucDto(
+            KaydiId: kaydiId,
+            EklenenSatir: eklenecekler.Count,
+            HataliSatir: hatalar.Count,
+            Hatalar: hatalar
+        );
     }
 
     public async Task DetayGuncelleAsync(int detayId, SayimKaydiDetayEkleDto request, CancellationToken ct = default)

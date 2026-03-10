@@ -14,6 +14,7 @@ public interface IAuthService
     Task<AuthResponseDto> LoginAsync(LoginRequestDto request, CancellationToken ct = default);
     Task<AuthResponseDto> RefreshTokenAsync(string token, CancellationToken ct = default);
     Task<AktifGorevDto?> GetAktifGorevAsync(string kullaniciId, CancellationToken ct = default);
+    Task<AktifGorevlerDto> GetAktifGorevlerAsync(string kullaniciId, CancellationToken ct = default);
 }
 
 public interface IKullaniciService

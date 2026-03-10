@@ -45,6 +45,8 @@ public interface ISayimKaydiRepository : IRepository<SayimKaydi>
     Task<SayimKaydi?> GetWithDetaylarAsync(int id, CancellationToken ct = default);
     Task<IEnumerable<SayimKaydi>> GetByTurIdAsync(int turId, CancellationToken ct = default);
     Task<SayimKaydi?> GetAktifKaydiByKullaniciAsync(string kullaniciId, CancellationToken ct = default);
+    Task AddDetayAsync(SayimKaydiDetay detay, CancellationToken ct = default);
+    Task AddDetayRangeAsync(IEnumerable<SayimKaydiDetay> detaylar, CancellationToken ct = default);
     void DeleteDetay(SayimKaydiDetay detay);
 }
 

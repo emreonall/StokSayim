@@ -176,73 +176,100 @@
                 </div>
             </div>
             <div style="display:flex; gap:8px">
-                <SfButton CssClass="e-primary" Disabled="@_yukleniyor" @onclick="MalzemeEkle" style="flex:1">
-                    @(_yukleniyor ? "Ekleniyor..." : "➕ Ekle")
+                <SfButton CssClass="e-primary" @onclick="MalzemeEkle" style="flex:1">
+                    ➕ Ekle
                 </SfButton>
                 <SfButton CssClass="e-outline" @onclick="FormTemizle">Temizle</SfButton>
             </div>
         </div>
 
-        <!-- Sağ: Eklenen Malzemeler -->
-        <div class="ss-card">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
-                <div class="ss-card-title" style="margin-bottom:0">
-                    Sayım Listesi
-                    <span class="ss-badge ss-badge-primary" style="margin-left:8px">@(_kaydi?.Detaylar.Count() ?? 0)</span>
+        <!-- Sağ: Listeler -->
+        <div style="display:flex; flex-direction:column; gap:12px">
+
+            <!-- Cihaz listesi (henüz gönderilmemiş) -->
+            <div class="ss-card" style="border:2px solid @(_cihazListesi.Any() ? "var(--warning, #f59e0b)" : "var(--border)")">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
+                    <div style="font-weight:600; font-size:14px">
+                        📱 Cihaz Listesi
+                        <span class="ss-badge @(_cihazListesi.Any() ? "ss-badge-warn" : "ss-badge-muted")" style="margin-left:8px">
+                            @_cihazListesi.Count
+                        </span>
+                    </div>
+                    @if (_cihazListesi.Any())
+                    {
+                        <SfButton CssClass="e-primary e-small" Disabled="@_yukleniyor" @onclick="TopluGonder">
+                            @(_yukleniyor ? "Gönderiliyor..." : "⬆ Sisteme Aktar")
+                        </SfButton>
+                    }
                 </div>
-                <SfButton CssClass="e-outline e-small" @onclick="KaydiYenile">🔄</SfButton>
+                @if (!_cihazListesi.Any())
+                {
+                    <div style="font-size:12px; color:var(--muted); text-align:center; padding:8px">
+                        Eklenen malzemeler burada birikir
+                    </div>
+                }
+                else
+                {
+                    <div style="overflow-y:auto; max-height:180px">
+                        <table style="width:100%; border-collapse:collapse; font-size:12px">
+                            <tbody>
+                                @foreach (var d in _cihazListesi)
+                                {
+                                    <tr style="border-top:1px solid var(--border)">
+                                        <td style="padding:5px 6px; font-weight:600">@d.MalzemeKodu</td>
+                                        <td style="padding:5px 6px; color:var(--muted)">@d.MalzemeAdi</td>
+                                        <td style="padding:5px 6px; text-align:right; font-weight:600">@d.SayilanMiktar @d.Birim</td>
+                                        <td style="padding:5px 6px; text-align:center">
+                                            <span style="cursor:pointer; color:var(--danger)"
+                                                  @onclick="@(() => _cihazListesi.Remove(d))">✕</span>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
             </div>
 
-            @if (_kaydi == null || !_kaydi.Detaylar.Any())
-            {
-                <div class="ss-empty">
-                    <div class="ss-empty-icon">📭</div>
-                    <div class="ss-empty-text">Henüz malzeme eklenmedi</div>
+            <!-- DB'deki onaylı kayıtlar -->
+            <div class="ss-card">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
+                    <div style="font-weight:600; font-size:14px">
+                        🗄 Sistemdeki Kayıtlar
+                        <span class="ss-badge ss-badge-primary" style="margin-left:8px">@(_kaydi?.Detaylar.Count() ?? 0)</span>
+                    </div>
+                    <SfButton CssClass="e-outline e-small" @onclick="KaydiYenile">🔄</SfButton>
                 </div>
-            }
-            else
-            {
-                <div style="overflow-y:auto; max-height:400px">
-                    <table style="width:100%; border-collapse:collapse; font-size:13px">
-                        <thead>
-                            <tr style="background:var(--bg)">
-                                <th style="padding:6px 8px; text-align:left; color:var(--muted)">Kod</th>
-                                <th style="padding:6px 8px; text-align:left; color:var(--muted)">Malzeme</th>
-                                <th style="padding:6px 8px; text-align:right; color:var(--muted)">Miktar</th>
-                                <th style="padding:6px 8px; text-align:center; color:var(--muted)">İşlem</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var d in _kaydi.Detaylar)
-                            {
-                                <tr style="border-top:1px solid var(--border)">
-                                    <td style="padding:6px 8px; font-weight:600">@d.MalzemeKodu</td>
-                                    <td style="padding:6px 8px">
-                                        @d.MalzemeAdi
-                                        @if (!string.IsNullOrEmpty(d.LotNo))
-                                        {
-                                            <div style="font-size:11px; color:var(--muted)">Lot: @d.LotNo</div>
-                                        }
-                                    </td>
-                                    <td style="padding:6px 8px; text-align:right; font-weight:600">
-                                        @d.SayilanMiktar @d.Birim
-                                    </td>
-                                    <td style="padding:6px 8px; text-align:center">
-                                        <span style="cursor:pointer; color:var(--danger); font-size:16px"
-                                              @onclick="@(async () => await DetaySil(d.Id))">🗑</span>
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            }
+                @if (_kaydi == null || !_kaydi.Detaylar.Any())
+                {
+                    <div style="font-size:12px; color:var(--muted); text-align:center; padding:8px">
+                        Henüz sisteme aktarılmış kayıt yok
+                    </div>
+                }
+                else
+                {
+                    <div style="overflow-y:auto; max-height:200px">
+                        <table style="width:100%; border-collapse:collapse; font-size:12px">
+                            <tbody>
+                                @foreach (var d in _kaydi.Detaylar)
+                                {
+                                    <tr style="border-top:1px solid var(--border)">
+                                        <td style="padding:5px 6px; font-weight:600">@d.MalzemeKodu</td>
+                                        <td style="padding:5px 6px; color:var(--muted)">@d.MalzemeAdi</td>
+                                        <td style="padding:5px 6px; text-align:right; font-weight:600">@d.SayilanMiktar @d.Birim</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
 
-            <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:12px">
-                <SfButton CssClass="e-danger" Disabled="@(_kaydi == null || _yukleniyor)"
-                          @onclick="@(() => _adim = 4)" style="width:100%">
-                    ✅ Sayımı Tamamla →
-                </SfButton>
+                <div style="margin-top:12px; border-top:1px solid var(--border); padding-top:10px">
+                    <SfButton CssClass="e-danger" Disabled="@(_kaydi == null || _yukleniyor)"
+                              @onclick="@(() => _adim = 4)" style="width:100%">
+                        ✅ Sayımı Tamamla →
+                    </SfButton>
+                </div>
             </div>
         </div>
     </div>
@@ -355,6 +382,9 @@
     // Kayıt
     private SayimKaydiDto? _kaydi;
 
+    // Cihaz üzerindeki geçici liste (henüz API'ye gönderilmemiş)
+    private List<SayimKaydiDetayEkleDto> _cihazListesi = new();
+
     // Malzeme form
     private string _malzemeKodu = "";
     private string _malzemeAdi = "";
@@ -388,7 +418,16 @@
             if (_gorev?.SayimKaydiId.HasValue == true)
             {
                 _kaydi = await KaydiService.GetByIdAsync(_gorev.SayimKaydiId.Value);
-                _adim = 3;
+                if (_kaydi?.DurumAdi == "Tamamlandi")
+                {
+                    _hata = "Bu ekibin sayımı zaten tamamlanmış. Yeni bir sayım başlatmak için yöneticiye başvurun.";
+                    _adim = 1;
+                }
+                else
+                {
+                    _basari += " Kaldığınız yerden devam ediyorsunuz.";
+                    _adim = 3;
+                }
             }
             else
             {
@@ -433,10 +472,9 @@
         finally { _yukleniyor = false; }
     }
 
-    // ADIM 4: Malzeme ekle
-    private async Task MalzemeEkle()
+    // ADIM 4: Malzeme ekle — cihaz listesine ekle (API'ye henüz gönderme)
+    private void MalzemeEkle()
     {
-        if (_kaydi == null) return;
         if (string.IsNullOrWhiteSpace(_malzemeKodu) || string.IsNullOrWhiteSpace(_malzemeAdi))
         {
             _hata = "Malzeme kodu ve adı zorunludur."; return;
@@ -445,24 +483,43 @@
         if (string.IsNullOrWhiteSpace(_birim)) { _hata = "Birim zorunludur."; return; }
 
         MesajTemizle();
+        _cihazListesi.Add(new SayimKaydiDetayEkleDto(
+            _malzemeKodu.Trim().ToUpper(),
+            _malzemeAdi.Trim(),
+            string.IsNullOrWhiteSpace(_lotNo) ? null : _lotNo.Trim(),
+            string.IsNullOrWhiteSpace(_seriNo) ? null : _seriNo.Trim(),
+            _miktar,
+            _birim.Trim().ToUpper(),
+            null
+        ));
+        _basari = $"{_malzemeKodu.Trim().ToUpper()} cihaz listesine eklendi. ({_cihazListesi.Count} satır bekliyor)";
+        FormTemizle();
+    }
+
+    // Cihaz listesini API'ye toplu gönder
+    private async Task TopluGonder()
+    {
+        if (_kaydi == null || !_cihazListesi.Any()) return;
+        MesajTemizle();
         _yukleniyor = true;
         try
         {
-            var dto = new SayimKaydiDetayEkleDto(
-                _malzemeKodu.Trim().ToUpper(),
-                _malzemeAdi.Trim(),
-                string.IsNullOrWhiteSpace(_lotNo) ? null : _lotNo.Trim(),
-                string.IsNullOrWhiteSpace(_seriNo) ? null : _seriNo.Trim(),
-                _miktar,
-                _birim.Trim().ToUpper(),
-                null
-            );
-            await KaydiService.DetayEkleAsync(_kaydi.Id, dto);
-            _basari = $"{_malzemeKodu} eklendi.";
-            FormTemizle();
-            await KaydiYenile();
+            var sonuc = await KaydiService.TopluDetayEkleAsync(_kaydi.Id, _cihazListesi);
+            if (sonuc != null)
+            {
+                // Başarılı — cihaz listesini temizle, DB listesini güncelle
+                _cihazListesi.Clear();
+                await KaydiYenile();
+                _basari = $"✅ {sonuc.EklenenSatir} satır sisteme aktarıldı.";
+                if (sonuc.HataliSatir > 0)
+                    _hata = $"{sonuc.HataliSatir} satırda hata: " + string.Join(" | ", sonuc.Hatalar);
+            }
         }
-        catch (Exception ex) { _hata = ex.Message; }
+        catch (Exception ex)
+        {
+            // Başarısız — cihaz listesi KORUNUR, kullanıcı tekrar deneyebilir
+            _hata = $"Aktarım başarısız — cihaz listesi korundu. Hata: {ex.Message}";
+        }
         finally { _yukleniyor = false; }
     }
 

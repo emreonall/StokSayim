@@ -63,6 +63,7 @@ public interface ISayimKaydiHttpService
     Task<SayimKaydiDto?> GetByIdAsync(int id);
     Task<SayimKaydiDto?> AcAsync(int turId, int ekipId);
     Task DetayEkleAsync(int kaydiId, SayimKaydiDetayEkleDto request);
+    Task<TopluDetayEkleSonucDto?> TopluDetayEkleAsync(int kaydiId, IEnumerable<SayimKaydiDetayEkleDto> detaylar);
     Task DetayGuncelleAsync(int detayId, SayimKaydiDetayEkleDto request);
     Task DetaySilAsync(int detayId);
     Task TamamlaAsync(int kaydiId);
@@ -234,16 +235,55 @@ public class SayimKaydiHttpService : ISayimKaydiHttpService
     }
 
     public async Task DetayEkleAsync(int kaydiId, SayimKaydiDetayEkleDto request)
-        => await _http.PostAsJsonAsync($"api/sayimkaydi/{kaydiId}/detay", request);
+    {
+        var r = await _http.PostAsJsonAsync($"api/sayimkaydi/{kaydiId}/detay", request);
+        if (!r.IsSuccessStatusCode)
+        {
+            var msg = await r.Content.ReadAsStringAsync();
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(msg) ? $"Hata: {(int)r.StatusCode}" : msg);
+        }
+    }
+
+    public async Task<TopluDetayEkleSonucDto?> TopluDetayEkleAsync(int kaydiId, IEnumerable<SayimKaydiDetayEkleDto> detaylar)
+    {
+        var r = await _http.PostAsJsonAsync($"api/sayimkaydi/{kaydiId}/detaylar-toplu", detaylar);
+        if (!r.IsSuccessStatusCode)
+        {
+            var msg = await r.Content.ReadAsStringAsync();
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(msg) ? $"Hata: {(int)r.StatusCode}" : msg);
+        }
+        return await r.Content.ReadFromJsonAsync<TopluDetayEkleSonucDto>();
+    }
 
     public async Task DetayGuncelleAsync(int detayId, SayimKaydiDetayEkleDto request)
-        => await _http.PutAsJsonAsync($"api/sayimkaydi/detay/{detayId}", request);
+    {
+        var r = await _http.PutAsJsonAsync($"api/sayimkaydi/detay/{detayId}", request);
+        if (!r.IsSuccessStatusCode)
+        {
+            var msg = await r.Content.ReadAsStringAsync();
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(msg) ? $"Hata: {(int)r.StatusCode}" : msg);
+        }
+    }
 
     public async Task DetaySilAsync(int detayId)
-        => await _http.DeleteAsync($"api/sayimkaydi/detay/{detayId}");
+    {
+        var r = await _http.DeleteAsync($"api/sayimkaydi/detay/{detayId}");
+        if (!r.IsSuccessStatusCode)
+        {
+            var msg = await r.Content.ReadAsStringAsync();
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(msg) ? $"Hata: {(int)r.StatusCode}" : msg);
+        }
+    }
 
     public async Task TamamlaAsync(int kaydiId)
-        => await _http.PostAsync($"api/sayimkaydi/{kaydiId}/tamamla", null);
+    {
+        var r = await _http.PostAsync($"api/sayimkaydi/{kaydiId}/tamamla", null);
+        if (!r.IsSuccessStatusCode)
+        {
+            var msg = await r.Content.ReadAsStringAsync();
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(msg) ? $"Hata: {(int)r.StatusCode}" : msg);
+        }
+    }
 }
 
 public class RaporHttpService : IRaporHttpService

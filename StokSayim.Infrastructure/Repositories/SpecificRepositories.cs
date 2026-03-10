@@ -146,6 +146,16 @@ public class SayimKaydiRepository : Repository<SayimKaydi>, ISayimKaydiRepositor
                        (x.Durum == SayimKaydiDurum.Taslak || x.Durum == SayimKaydiDurum.Devam))
             .FirstOrDefaultAsync(ct);
 
+    public async Task AddDetayAsync(SayimKaydiDetay detay, CancellationToken ct = default)
+    {
+        await _context.Set<SayimKaydiDetay>().AddAsync(detay, ct);
+    }
+
+    public async Task AddDetayRangeAsync(IEnumerable<SayimKaydiDetay> detaylar, CancellationToken ct = default)
+    {
+        await _context.Set<SayimKaydiDetay>().AddRangeAsync(detaylar, ct);
+    }
+
     public void DeleteDetay(SayimKaydiDetay detay)
     {
         _context.Remove(detay);

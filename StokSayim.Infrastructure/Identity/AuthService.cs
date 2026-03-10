@@ -2,7 +2,6 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using StokSayim.Application.DTOs.Auth;
@@ -10,7 +9,6 @@ using StokSayim.Application.Interfaces;
 using StokSayim.Application.Interfaces.Services;
 using StokSayim.Domain.Entities;
 using StokSayim.Domain.Enums;
-using StokSayim.Infrastructure.Data;
 
 namespace StokSayim.Infrastructure.Identity;
 
@@ -20,16 +18,13 @@ public class AuthService : IAuthService
     private readonly IConfiguration _config;
     private readonly IEkipService _ekipService;
     private readonly IUnitOfWork _uow;
-    private readonly AppDbContext _db;
 
-    public AuthService(UserManager<ApplicationUser> userManager, IConfiguration config,
-        IEkipService ekipService, IUnitOfWork uow, AppDbContext db)
+    public AuthService(UserManager<ApplicationUser> userManager, IConfiguration config, IEkipService ekipService, IUnitOfWork uow)
     {
         _userManager = userManager;
         _config = config;
         _ekipService = ekipService;
         _uow = uow;
-        _db = db;
     }
 
     public async Task<AuthResponseDto> LoginAsync(LoginRequestDto request, CancellationToken ct = default)

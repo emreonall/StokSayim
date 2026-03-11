@@ -166,14 +166,19 @@ else
                             <!-- Sonuç -->
                             @if (tur.Sonuc != null)
                             {
-                                <div style="margin-top:8px; padding:8px; background:var(--bg); border-radius:6px; font-size:12px">
-                                    <strong>Sonuç:</strong> @tur.Sonuc.ToplamMalzeme malzeme,
-                                    <span style="color:var(--success)">@tur.Sonuc.Eslesen eşleşti</span>,
-                                    <span style="color:var(--danger)">@tur.Sonuc.Farkli farklı</span>
-                                    <SfButton CssClass="e-small e-flat" style="margin-left:8px"
-                                              @onclick="@(() => Nav.NavigateTo($"/tur-sonucu/{tur.Id}"))">
-                                        Detay →
-                                    </SfButton>
+                                <div style="margin-top:8px; padding:10px 12px; background:var(--bg); border-radius:6px; font-size:12px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px">
+                                    <div>
+                                        <strong>Sonuç:</strong>
+                                        @tur.Sonuc.ToplamMalzeme malzeme —
+                                        <span style="color:var(--success)">@tur.Sonuc.Eslesen eşleşti</span>,
+                                        <span style="color:var(--danger); font-weight:@(tur.Sonuc.Farkli > 0 ? "700" : "400")">@tur.Sonuc.Farkli farklı</span>
+                                    </div>
+                                    <AuthorizeView Roles="Admin,SayimSorumlusu">
+                                        <SfButton CssClass="e-small e-primary"
+                                                  @onclick="@(() => Nav.NavigateTo($"/tur-sonucu/{tur.Id}"))">
+                                            📊 Karşılaştırma Raporu
+                                        </SfButton>
+                                    </AuthorizeView>
                                 </div>
                             }
                             <!-- Karşılaştırma Butonu -->

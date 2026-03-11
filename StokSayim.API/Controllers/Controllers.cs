@@ -36,6 +36,15 @@ public class AuthController : ControllerBase
         var gorev = await _authService.GetAktifGorevAsync(kullaniciId, ct);
         return Ok(gorev);
     }
+
+    [HttpGet("aktif-gorevler")]
+    public async Task<IActionResult> GetAktifGorevler(CancellationToken ct)
+    {
+        var kullaniciId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(kullaniciId)) return Unauthorized();
+        var gorevler = await _authService.GetAktifGorevlerAsync(kullaniciId, ct);
+        return Ok(gorevler);
+    }
 }
 
 [ApiController]
@@ -292,6 +301,15 @@ public class SayimOturumuController : ControllerBase
         var kullaniciId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value;
         await _service.KontrolTuruAcAsync(id, request, kullaniciId, ct);
         return NoContent();
+    }
+
+    [HttpGet("tur-sonucu/{turId}")]
+    [Authorize(Roles = "Admin,SayimSorumlusu,SayimEkibi")]
+    public async Task<IActionResult> GetTurSonucu(int turId, CancellationToken ct)
+    {
+        var sonuc = await _service.GetTurSonucuAsync(turId, ct);
+        if (sonuc == null) return NotFound();
+        return Ok(sonuc);
     }
 
     [HttpPost("tur-sonucu/{turId}/hesapla")]

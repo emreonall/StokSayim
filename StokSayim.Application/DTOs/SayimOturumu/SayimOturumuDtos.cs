@@ -71,3 +71,32 @@ public record ManuelKararDto(
     decimal KararVerilenDeger,
     string Gerekce
 );
+public record TurSonucuDetayDto(
+    int Id,
+    string MalzemeKodu,
+    string MalzemeAdi,
+    string? LotNo,
+    string? SeriNo,
+    string Birim,
+    decimal? Deger1,
+    decimal? Deger2,
+    decimal? Fark,
+    decimal? FarkYuzdesi,
+    string Durum,
+    decimal? OnaylananDeger,
+    string? KararTipi,
+    string? ManuelGerekce
+);
+
+public record TurSonucuDto(
+    int Id,
+    int SayimTuruId,
+    int TurNo,
+    string TurTipi,
+    int ToplamMalzemeSayisi,
+    int EslesilenSayisi,
+    int FarkliSayisi,
+    string GenelDurum,
+    DateTime HesaplamaTarihi,
+    List<TurSonucuDetayDto> Detaylar
+);

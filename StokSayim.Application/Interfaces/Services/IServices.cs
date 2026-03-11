@@ -64,6 +64,7 @@ public interface ISayimOturumuService
     Task BaslatAsync(int bolgeId, string kullaniciId, CancellationToken ct = default);
     Task<IEnumerable<GorevBildirimDto>> GetBekleyenBildirimlerAsync(CancellationToken ct = default);
     Task KontrolTuruAcAsync(int oturumuId, KontrolTuruAcDto request, string kullaniciId, CancellationToken ct = default);
+    Task<TurSonucuDto?> GetTurSonucuAsync(int turId, CancellationToken ct = default);
     Task ManuelKararVerAsync(int turSonucuDetayId, ManuelKararDto request, string kullaniciId, CancellationToken ct = default);
     Task ErpKarsilastirmaBaslatAsync(int planId, string kullaniciId, CancellationToken ct = default);
     Task HesaplaKarsilastirmaAsync(int turId, CancellationToken ct = default);
@@ -74,6 +75,7 @@ public interface ISayimKaydiService
     Task<SayimKaydiDto?> GetByIdAsync(int id, CancellationToken ct = default);
     Task<SayimKaydiDto> AcAsync(int turId, int ekipId, string kullaniciId, CancellationToken ct = default);
     Task DetayEkleAsync(int kaydiId, SayimKaydiDetayEkleDto request, CancellationToken ct = default);
+    Task<TopluDetayEkleSonucDto> TopluDetayEkleAsync(int kaydiId, IEnumerable<SayimKaydiDetayEkleDto> detaylar, CancellationToken ct = default);
     Task DetayGuncelleAsync(int detayId, SayimKaydiDetayEkleDto request, CancellationToken ct = default);
     Task DetaySilAsync(int detayId, CancellationToken ct = default);
     Task TamamlaAsync(int kaydiId, string kullaniciId, CancellationToken ct = default);

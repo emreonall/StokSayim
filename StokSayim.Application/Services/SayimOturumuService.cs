@@ -158,6 +158,40 @@ public class SayimOturumuService : ISayimOturumuService
         }
     }
 
+    public async Task<TurSonucuDto?> GetTurSonucuAsync(int turId, CancellationToken ct = default)
+    {
+        var sonuc = await _uow.TurSonuclari.GetByTurIdAsync(turId, ct);
+        if (sonuc == null) return null;
+
+        return new TurSonucuDto(
+            Id: sonuc.Id,
+            SayimTuruId: sonuc.SayimTuruId,
+            TurNo: sonuc.SayimTuru?.TurNo ?? 0,
+            TurTipi: sonuc.SayimTuru?.TurTipi.ToString() ?? string.Empty,
+            ToplamMalzemeSayisi: sonuc.ToplamMalzemeSayisi,
+            EslesilenSayisi: sonuc.EslesilenSayisi,
+            FarkliSayisi: sonuc.FarkliSayisi,
+            GenelDurum: sonuc.GenelDurum.ToString(),
+            HesaplamaTarihi: sonuc.HesaplamaTarihi,
+            Detaylar: sonuc.Detaylar.Select(d => new TurSonucuDetayDto(
+                Id: d.Id,
+                MalzemeKodu: d.MalzemeKodu,
+                MalzemeAdi: d.MalzemeAdi,
+                LotNo: d.LotNo,
+                SeriNo: d.SeriNo,
+                Birim: d.Birim,
+                Deger1: d.Deger1,
+                Deger2: d.Deger2,
+                Fark: d.Fark,
+                FarkYuzdesi: d.FarkYuzdesi,
+                Durum: d.Durum.ToString(),
+                OnaylananDeger: d.OnaylananDeger,
+                KararTipi: d.KararTipi?.ToString(),
+                ManuelGerekce: d.ManuelKarar?.Gerekce
+            )).ToList()
+        );
+    }
+
     public async Task ManuelKararVerAsync(int turSonucuDetayId, ManuelKararDto request, string kullaniciId, CancellationToken ct = default)
     {
         var detay = await _uow.TurSonuclari.Query()

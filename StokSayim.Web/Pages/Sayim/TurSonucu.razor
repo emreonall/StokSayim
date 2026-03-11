@@ -2,6 +2,7 @@
 @attribute [Authorize(Roles = "Admin,SayimSorumlusu")]
 @inject ISayimOturumuHttpService OturumuService
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>Tur Sonucu</PageTitle>
 
@@ -16,12 +17,45 @@ else
             <h1 class="ss-page-title">Tur Sonucu</h1>
             <p class="ss-page-subtitle">Karşılaştırma detayı ve karar ekranı</p>
         </div>
-        <SfButton CssClass="e-outline" @onclick="@(() => Nav.NavigateTo("-1"))">← Geri</SfButton>
+        <SfButton CssClass="e-outline" @onclick="Geri">← Geri</SfButton>
     </div>
 
     @if (!string.IsNullOrEmpty(_mesaj))
     {
         <div class="ss-alert @(_hata ? "ss-alert-danger" : "ss-alert-success")">@_mesaj</div>
+    }
+
+    <!-- Özet -->
+    @if (_turSonucu != null)
+    {
+        var durumCls = _turSonucu.GenelDurum == "Onaylandi" ? "ss-badge-success" : "ss-badge-danger";
+        <div class="ss-card" style="padding:16px 20px; margin-bottom:16px; display:flex; gap:32px; align-items:center; flex-wrap:wrap">
+            <div>
+                <span style="font-size:12px; color:var(--muted)">GENEL DURUM</span><br />
+                <span class="ss-badge @durumCls" style="font-size:14px; margin-top:4px">
+                    @(_turSonucu.GenelDurum == "Onaylandi" ? "✓ Onaylandı" : "⚠ Fark Var")
+                </span>
+            </div>
+            <div>
+                <span style="font-size:12px; color:var(--muted)">TOPLAM</span><br />
+                <strong style="font-size:20px">@_turSonucu.ToplamMalzemeSayisi</strong>
+            </div>
+            <div>
+                <span style="font-size:12px; color:var(--muted)">EŞLEŞTİ</span><br />
+                <strong style="font-size:20px; color:var(--success)">@_turSonucu.EslesilenSayisi</strong>
+            </div>
+            <div>
+                <span style="font-size:12px; color:var(--muted)">FARK VAR</span><br />
+                <strong style="font-size:20px; color:var(--danger)">@_turSonucu.FarkliSayisi</strong>
+            </div>
+            <div>
+                <span style="font-size:12px; color:var(--muted)">KARAR BEKLİYOR</span><br />
+                <strong style="font-size:20px; color:var(--warn)">@_detaylar.Count(d => d.Durum == "FarkVar" && !d.OnaylananDeger.HasValue)</strong>
+            </div>
+            <div style="margin-left:auto; font-size:12px; color:var(--muted)">
+                Hesaplandı: @_turSonucu.HesaplamaTarihi.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+            </div>
+        </div>
     }
 
     <!-- Filtre -->
@@ -44,8 +78,8 @@ else
                 <GridColumn Field="MalzemeAdi" HeaderText="Malzeme Adı" Width="200" />
                 <GridColumn Field="LotNo" HeaderText="Lot No" Width="100" />
                 <GridColumn Field="Birim" HeaderText="Birim" Width="70" TextAlign="TextAlign.Center" />
-                <GridColumn Field="Deger1" HeaderText="Değer 1 / ERP" Width="110" Format="N2" TextAlign="TextAlign.Right" />
-                <GridColumn Field="Deger2" HeaderText="Değer 2 / Fiili" Width="110" Format="N2" TextAlign="TextAlign.Right" />
+                <GridColumn Field="Deger1" HeaderText="@_deger1Baslik" Width="110" Format="N2" TextAlign="TextAlign.Right" />
+                <GridColumn Field="Deger2" HeaderText="@_deger2Baslik" Width="110" Format="N2" TextAlign="TextAlign.Right" />
                 <GridColumn Field="Fark" HeaderText="Fark" Width="90" Format="N2" TextAlign="TextAlign.Right">
                     <Template>
                         @{
@@ -116,15 +150,18 @@ else
             {
                 <div class="ss-alert ss-alert-info" style="margin-bottom:16px">
                     <strong>@_aktifDetay.MalzemeKodu</strong> — @_aktifDetay.MalzemeAdi
-                    @if (!string.IsNullOrEmpty(_aktifDetay.LotNo)) { <span> | Lot: @_aktifDetay.LotNo</span> }
+                    @if (!string.IsNullOrEmpty(_aktifDetay.LotNo))
+                    {
+                        <span> | Lot: @_aktifDetay.LotNo</span>
+                    }
                 </div>
                 <div style="display:flex; gap:16px; margin-bottom:16px">
                     <div style="flex:1; text-align:center; padding:12px; background:var(--bg); border-radius:8px">
-                        <div style="font-size:11px; color:var(--muted)">Değer 1</div>
+                        <div style="font-size:11px; color:var(--muted)">@_deger1Baslik</div>
                         <div style="font-size:20px; font-weight:700">@(_aktifDetay.Deger1?.ToString("N2") ?? "—")</div>
                     </div>
                     <div style="flex:1; text-align:center; padding:12px; background:var(--bg); border-radius:8px">
-                        <div style="font-size:11px; color:var(--muted)">Değer 2</div>
+                        <div style="font-size:11px; color:var(--muted)">@_deger2Baslik</div>
                         <div style="font-size:20px; font-weight:700">@(_aktifDetay.Deger2?.ToString("N2") ?? "—")</div>
                     </div>
                 </div>
@@ -151,6 +188,9 @@ else
     [Parameter] public int TurId { get; set; }
 
     private bool _yukleniyor = true;
+    private TurSonucuDto? _turSonucu;
+    private string _deger1Baslik = "Ekip 1";
+    private string _deger2Baslik = "Ekip 2";
     private List<TurSonucuDetayRow> _detaylar = [];
     private string _filtre = "Tumu";
     private string _mesaj = "";
@@ -175,12 +215,42 @@ else
         _ => _detaylar
     };
 
+    private async Task Geri() => await JS.InvokeVoidAsync("history.back");
+
     protected override async Task OnInitializedAsync()
     {
-        // TurSonucu detaylarını yükle
-        // Not: TurSonucuDetay için ayrı HTTP service eklenebilir;
-        // şimdilik oturum üzerinden erişiyoruz.
-        _yukleniyor = false;
+        _yukleniyor = true;
+        try
+        {
+            var sonuc = await OturumuService.GetTurSonucuAsync(TurId);
+            if (sonuc != null)
+            {
+                _turSonucu = sonuc;
+                // Tur tipine göre kolon başlıkları
+                if (sonuc.TurTipi == "ErpKarsilastirma")
+                {
+                    _deger1Baslik = "Fiili Sayım";
+                    _deger2Baslik = "ERP";
+                }
+                else
+                {
+                    _deger1Baslik = "Birinci Ekip";
+                    _deger2Baslik = sonuc.TurTipi == "Kontrol" ? "Kontrol Ekibi" : "İkinci Ekip";
+                }
+                _detaylar = sonuc.Detaylar.Select(d => new TurSonucuDetayRow(
+                    d.Id, d.MalzemeKodu, d.MalzemeAdi, d.LotNo, d.SeriNo,
+                    d.Birim, d.Deger1, d.Deger2, d.Fark, d.FarkYuzdesi,
+                    d.Durum, d.OnaylananDeger, d.KararTipi
+                )).ToList();
+            }
+            else
+            {
+                _mesaj = "Karşılaştırma henüz hesaplanmamış.";
+                _hata = true;
+            }
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+        finally { _yukleniyor = false; }
     }
 
     private void ManuelKararAc(TurSonucuDetayRow detay)

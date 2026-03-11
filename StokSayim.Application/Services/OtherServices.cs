@@ -330,6 +330,22 @@ public class SayimKaydiService : ISayimKaydiService
         kaydi.TamamlanmaTarihi = DateTime.UtcNow;
         _uow.SayimKayitlari.Update(kaydi);
         await _uow.SaveChangesAsync(ct);
+
+        // Tüm katılımcılar tamamladıysa turu KarsilastirmaBekliyor'a çek
+        // Bu sayede diğer bölgeleri beklemeden karşılaştırma yapılabilir
+        var tur = await _uow.SayimTurlari.GetWithKatilimcilarAsync(kaydi.SayimTuruId, ct);
+        if (tur == null) return;
+
+        var tumKayitlar = await _uow.SayimKayitlari.GetByTurIdAsync(tur.Id, ct);
+        var hepsiTamamlandi = tur.Katilimcilar.All(k =>
+            k.SayimKaydiId.HasValue &&
+            tumKayitlar.Any(r => r.Id == k.SayimKaydiId && r.Durum == SayimKaydiDurum.Tamamlandi));
+
+        if (hepsiTamamlandi && tur.Durum == SayimTuruDurum.DevamEdiyor)
+        {
+            tur.Durum = SayimTuruDurum.KarsilastirmaBekliyor;
+            await _uow.SaveChangesAsync(ct);
+        }
     }
 
     private static SayimKaydiDto MapToDto(SayimKaydi k) => new(

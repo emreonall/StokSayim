@@ -15,6 +15,7 @@ public interface IAuthHttpService
 {
     Task<AuthResponseDto?> LoginAsync(LoginRequestDto request);
     Task<AktifGorevDto?> GetAktifGorevAsync();
+    Task<AktifGorevlerDto?> GetAktifGorevlerAsync();
 }
 
 public interface ISayimPlaniHttpService
@@ -53,6 +54,7 @@ public interface ISayimOturumuHttpService
     Task BaslatAsync(int bolgeId);
     Task<IEnumerable<GorevBildirimDto>> GetBekleyenBildirimlerAsync();
     Task KontrolTuruAcAsync(int oturumuId, KontrolTuruAcDto request);
+    Task<TurSonucuDto?> GetTurSonucuAsync(int turId);
     Task ManuelKararVerAsync(int detayId, ManuelKararDto request);
     Task ErpKarsilastirmaBaslatAsync(int planId);
     Task HesaplaKarsilastirmaAsync(int turId);
@@ -107,6 +109,9 @@ public class AuthHttpService : IAuthHttpService
 
     public async Task<AktifGorevDto?> GetAktifGorevAsync()
         => await _http.GetFromJsonAsync<AktifGorevDto>("api/auth/aktif-gorev");
+
+    public async Task<AktifGorevlerDto?> GetAktifGorevlerAsync()
+        => await _http.GetFromJsonAsync<AktifGorevlerDto>("api/auth/aktif-gorevler");
 }
 
 public class SayimPlaniHttpService : ISayimPlaniHttpService
@@ -209,6 +214,9 @@ public class SayimOturumuHttpService : ISayimOturumuHttpService
 
     public async Task KontrolTuruAcAsync(int oturumuId, KontrolTuruAcDto request)
         => await _http.PostAsJsonAsync($"api/sayimoturumu/{oturumuId}/kontrol-turu-ac", request);
+
+    public async Task<TurSonucuDto?> GetTurSonucuAsync(int turId)
+        => await _http.GetFromJsonAsync<TurSonucuDto>($"api/sayimoturumu/tur-sonucu/{turId}");
 
     public async Task ManuelKararVerAsync(int detayId, ManuelKararDto request)
         => await _http.PostAsJsonAsync($"api/sayimoturumu/tur-sonucu-detay/{detayId}/manuel-karar", request);

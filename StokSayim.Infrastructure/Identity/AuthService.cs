@@ -1,7 +1,5 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using StokSayim.Application.DTOs.Auth;
@@ -9,6 +7,10 @@ using StokSayim.Application.Interfaces;
 using StokSayim.Application.Interfaces.Services;
 using StokSayim.Domain.Entities;
 using StokSayim.Domain.Enums;
+using StokSayim.Infrastructure.Data;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 
 namespace StokSayim.Infrastructure.Identity;
 
@@ -18,13 +20,14 @@ public class AuthService : IAuthService
     private readonly IConfiguration _config;
     private readonly IEkipService _ekipService;
     private readonly IUnitOfWork _uow;
-
-    public AuthService(UserManager<ApplicationUser> userManager, IConfiguration config, IEkipService ekipService, IUnitOfWork uow)
+    private readonly AppDbContext _db;
+    public AuthService(UserManager<ApplicationUser> userManager, IConfiguration config, IEkipService ekipService, IUnitOfWork uow, AppDbContext db)
     {
         _userManager = userManager;
         _config = config;
         _ekipService = ekipService;
         _uow = uow;
+        _db = db;
     }
 
     public async Task<AuthResponseDto> LoginAsync(LoginRequestDto request, CancellationToken ct = default)
@@ -63,10 +66,12 @@ public class AuthService : IAuthService
         // Kullanıcının ekibini bul
         var ekip = await _uow.Ekipler.GetByKullaniciIdAsync(kullaniciId, ct);
         if (ekip == null)
-            return Bos(kullaniciId, user.AdSoyad);
+            return new AktifGorevDto(kullaniciId, user.AdSoyad, null, null, null,
+                null, null, null, null, null, null, null, null, false);
 
-        // Önce aktif açık sayım kaydı var mı? (Taslak veya Devam durumunda)
+        // Önce aktif açık sayım kaydı var mı? (Taslak veya Devam)
         var aktifKaydi = await _uow.SayimKayitlari.GetAktifKaydiByKullaniciAsync(kullaniciId, ct);
+
         if (aktifKaydi != null)
         {
             var tur = aktifKaydi.SayimTuru;
@@ -80,7 +85,7 @@ public class AuthService : IAuthService
                 EkipId: ekip.Id,
                 EkipAdi: ekip.EkipAdi,
                 EkipRolu: katilimci != null
-                    ? new EkipRoluDto((int)katilimci.EkipRolu, RolAdi(katilimci.EkipRolu))
+                    ? new EkipRoluDto((int)katilimci.EkipRolu, katilimci.EkipRolu.ToString())
                     : null,
                 BolgeId: bolge.Id,
                 BolgeAdi: bolge.BolgeAdi,
@@ -94,16 +99,15 @@ public class AuthService : IAuthService
             );
         }
 
-        // Aktif kayıt yoksa — ekibin bağlı olduğu bölgeyi EkipGrubuEkip üzerinden bul
-        var ekipGrubuEkipEntry = await _db.Set<EkipGrubuEkip>()
+        // Aktif kayıt yoksa — EkipGrubuEkip join tablosu üzerinden bölgeyi bul
+        var ekipGrubuEkip = await _db.Set<EkipGrubuEkip>()
             .Include(x => x.EkipGrubu)
             .FirstOrDefaultAsync(x => x.EkipId == ekip.Id, ct);
+        if (ekipGrubuEkip == null)
+            return new AktifGorevDto(kullaniciId, user.AdSoyad, ekip.Id, ekip.EkipAdi, null,
+                null, null, null, null, null, null, null, null, false);
 
-        if (ekipGrubuEkipEntry == null)
-            return new AktifGorevDto(kullaniciId, user.AdSoyad, ekip.Id, ekip.EkipAdi,
-                null, null, null, null, null, null, null, null, null, false);
-
-        var bolgeEntity = await _uow.Bolgeler.GetWithOturumAsync(ekipGrubuEkipEntry.EkipGrubu.BolgeId, ct);
+        var bolgeEntity = await _uow.Bolgeler.GetWithOturumAsync(ekipGrubuEkip.EkipGrubu.BolgeId, ct);
         if (bolgeEntity?.SayimOturumu == null)
             return new AktifGorevDto(kullaniciId, user.AdSoyad, ekip.Id, ekip.EkipAdi, null,
                 bolgeEntity?.Id, bolgeEntity?.BolgeAdi, null, null, null, null, null, null, false);
@@ -122,7 +126,7 @@ public class AuthService : IAuthService
             EkipId: ekip.Id,
             EkipAdi: ekip.EkipAdi,
             EkipRolu: katilimciEntry != null
-                ? new EkipRoluDto((int)katilimciEntry.EkipRolu, RolAdi(katilimciEntry.EkipRolu))
+                ? new EkipRoluDto((int)katilimciEntry.EkipRolu, katilimciEntry.EkipRolu.ToString())
                 : null,
             BolgeId: bolgeEntity.Id,
             BolgeAdi: bolgeEntity.BolgeAdi,
@@ -134,43 +138,6 @@ public class AuthService : IAuthService
             SayimKaydiDurum: null,
             GorevVar: katilimciEntry != null
         );
-    }
-
-    private static AktifGorevDto Bos(string kullaniciId, string adSoyad) =>
-        new(kullaniciId, adSoyad, null, null, null, null, null, null, null, null, null, null, null, false);
-
-    private static string RolAdi(EkipRolu rol) => rol switch
-    {
-        EkipRolu.Birinci => "Birinci Ekip",
-        EkipRolu.Ikinci => "İkinci Ekip",
-        EkipRolu.Kontrol => "Kontrol Ekibi",
-        _ => rol.ToString()
-    };
-
-    private string GenerateJwtToken(ApplicationUser user, IList<string> roles)
-    {
-        var jwtSettings = _config.GetSection("JwtSettings");
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["SecretKey"]!));
-
-        var claims = new List<Claim>
-        {
-            new(JwtRegisteredClaimNames.Sub, user.Id),
-            new(JwtRegisteredClaimNames.Email, user.Email!),
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new("adSoyad", user.AdSoyad),
-        };
-
-        claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
-
-        var token = new JwtSecurityToken(
-            issuer: jwtSettings["Issuer"],
-            audience: jwtSettings["Audience"],
-            claims: claims,
-            expires: DateTime.UtcNow.AddHours(8),
-            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
-        );
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
     public async Task<AktifGorevlerDto> GetAktifGorevlerAsync(string kullaniciId, CancellationToken ct = default)
@@ -253,4 +220,38 @@ public class AuthService : IAuthService
 
         return new AktifGorevlerDto(kullaniciId, user.AdSoyad, secenekler);
     }
+
+    private string GenerateJwtToken(ApplicationUser user, IList<string> roles)
+    {
+        var jwtSettings = _config.GetSection("JwtSettings");
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["SecretKey"]!));
+
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, user.Id),
+            new(JwtRegisteredClaimNames.Email, user.Email!),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new("adSoyad", user.AdSoyad),
+        };
+
+        claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
+
+        var token = new JwtSecurityToken(
+            issuer: jwtSettings["Issuer"],
+            audience: jwtSettings["Audience"],
+            claims: claims,
+            expires: DateTime.UtcNow.AddHours(8),
+            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
+        );
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private static string RolAdi(EkipRolu rol) => rol switch
+    {
+        EkipRolu.Birinci => "Birinci Ekip",
+        EkipRolu.Ikinci => "İkinci Ekip",
+        EkipRolu.Kontrol => "Kontrol Ekibi",
+        _ => rol.ToString()
+    };
 }

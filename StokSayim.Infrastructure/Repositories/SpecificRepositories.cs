@@ -91,7 +91,8 @@ public class SayimOturumuRepository : Repository<SayimOturumu>, ISayimOturumuRep
 
     public async Task<SayimOturumu?> GetByBolgeIdAsync(int bolgeId, CancellationToken ct = default)
         => await _context.SayimOturumlari
-            .Include(x => x.SayimTurlari).ThenInclude(t => t.Katilimcilar)
+            .Include(x => x.SayimTurlari).ThenInclude(t => t.Katilimcilar).ThenInclude(k => k.Ekip)
+            .Include(x => x.SayimTurlari).ThenInclude(t => t.TurSonucu)
             .FirstOrDefaultAsync(x => x.BolgeId == bolgeId, ct);
 
     public async Task<IEnumerable<SayimOturumu>> GetByPlanIdAsync(int planId, CancellationToken ct = default)
@@ -192,6 +193,7 @@ public class TurSonucuRepository : Repository<TurSonucu>, ITurSonucuRepository
 
     public async Task<TurSonucu?> GetByTurIdAsync(int turId, CancellationToken ct = default)
         => await _context.TurSonuclari
+            .Include(x => x.SayimTuru)
             .Include(x => x.Detaylar).ThenInclude(d => d.ManuelKarar)
             .FirstOrDefaultAsync(x => x.SayimTuruId == turId, ct);
 }

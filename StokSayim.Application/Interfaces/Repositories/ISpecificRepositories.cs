@@ -1,4 +1,5 @@
 using StokSayim.Domain.Entities;
+using StokSayim.Domain.Enums;
 
 namespace StokSayim.Application.Interfaces.Repositories;
 
@@ -19,6 +20,7 @@ public interface IEkipRepository : IRepository<Ekip>
     Task<IEnumerable<Ekip>> GetAktifEkiplerAsync(CancellationToken ct = default);
     Task<Ekip?> GetWithKullaniciarAsync(int id, CancellationToken ct = default);
     Task<Ekip?> GetByKullaniciIdAsync(string kullaniciId, CancellationToken ct = default);
+    Task AddKullaniciAsync(EkipKullanici kayit, CancellationToken ct = default);
 }
 
 public interface IEkipGrubuRepository : IRepository<EkipGrubu>
@@ -66,5 +68,6 @@ public interface ITurSonucuRepository : IRepository<TurSonucu>
 public interface IGorevBildirimiRepository : IRepository<GorevBildirimi>
 {
     Task<IEnumerable<GorevBildirimi>> GetBekleyenlerAsync(CancellationToken ct = default);
+    Task<IEnumerable<GorevBildirimi>> GetBekleyenlerByOturumAsync(int oturumuId, GorevBildirimTipi tip, CancellationToken ct = default);
     Task<IEnumerable<GorevBildirimi>> GetByOturumuIdAsync(int oturumuId, CancellationToken ct = default);
 }

@@ -61,12 +61,12 @@ public class EkipService : IEkipService
 
     public async Task KullaniciEkleAsync(int ekipId, string kullaniciId, CancellationToken ct = default)
     {
-        var ekip = await _uow.Ekipler.GetByIdAsync(ekipId, ct)
-          ?? throw new KeyNotFoundException($"Ekip bulunamadı: {ekipId}");
+        var ekip = await _uow.Ekipler.GetWithKullaniciarAsync(ekipId, ct)
+            ?? throw new KeyNotFoundException($"Ekip bulunamadı: {ekipId}");
 
-        var mevcutEkip = await _uow.Ekipler.GetByKullaniciIdAsync(kullaniciId, ct);
-        if (mevcutEkip != null && mevcutEkip.Id != ekipId)
-            throw new InvalidOperationException("Kullanıcı zaten başka bir ekipte aktif.");
+        // Aynı ekipte zaten aktif mi?
+        if (ekip.EkipKullanicilari.Any(k => k.KullaniciId == kullaniciId && k.AktifMi))
+            throw new InvalidOperationException("Kullanıcı zaten bu ekipte aktif.");
 
         var kayit = new EkipKullanici
         {
@@ -76,8 +76,7 @@ public class EkipService : IEkipService
             AktifMi = true
         };
 
-        // ✅ ekip değil, kayit ekleniyor
-        ekip.EkipKullanicilari.Add(kayit);
+        await _uow.Ekipler.AddKullaniciAsync(kayit, ct);
         await _uow.SaveChangesAsync(ct);
     }
 

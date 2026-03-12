@@ -54,7 +54,7 @@ else
                         <div style="font-size:11px; color:var(--muted)">@b.OlusturmaTarihi.ToString("dd.MM.yyyy HH:mm")</div>
                     </div>
                     <div style="display:flex; flex-direction:column; gap:6px; flex-shrink:0">
-                        <SfButton CssClass="e-outline e-small" @onclick="@(() => Nav.NavigateTo($"/bolgeler/{b.SayimOturumuId}"))">
+                        <SfButton CssClass="e-outline e-small" @onclick="@(() => Nav.NavigateTo($"/bolgeler/{b.BolgeId}"))">
                             Bölgeye Git
                         </SfButton>
                         @if (b.BildirimTipi == GorevBildirimTipi.KontrolSayimiGerekli || b.BildirimTipi == GorevBildirimTipi.ErpKontrolGerekli)
@@ -75,7 +75,7 @@ else
         }
     </div>
 }
-}
+
 
 <!-- Kontrol Turu Dialog -->
 <SfDialog @bind-Visible="_kontrolDialogAcik" Header="Kontrol Turu Aç" Width="500px" ShowCloseIcon="true">

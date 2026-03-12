@@ -92,6 +92,7 @@ public class SayimOturumuService : ISayimOturumuService
         return bildirimler.Select(b => new GorevBildirimDto(
             Id: b.Id,
             SayimOturumuId: b.SayimOturumuId,
+            BolgeId: b.SayimOturumu?.BolgeId ?? 0,
             BolgeAdi: b.SayimOturumu?.Bolge?.BolgeAdi ?? string.Empty,
             SayimTuruId: b.SayimTuruId,
             TurNo: b.SayimTuru?.TurNo,
@@ -182,6 +183,7 @@ public class SayimOturumuService : ISayimOturumuService
                 Birim: d.Birim,
                 Deger1: d.Deger1,
                 Deger2: d.Deger2,
+                Deger3: d.Deger3,
                 Fark: d.Fark,
                 FarkYuzdesi: d.FarkYuzdesi,
                 Durum: d.Durum.ToString(),
@@ -287,13 +289,92 @@ public class SayimOturumuService : ISayimOturumuService
             throw new InvalidOperationException("Tüm ekipler sayımını tamamlamadan karşılaştırma yapılamaz.");
 
         var kayitlar = await _uow.SayimKayitlari.GetByTurIdAsync(turId, ct);
+        var ekipKayitlari = kayitlar.ToDictionary(k => k.EkipRolu, k => k.Detaylar);
+        var kontrolTuru = tur.TurTipi == SayimTuruTip.EkipKontrol;
 
+        // --- KONTROL TURU: ilk EkipKarsilastirma TurSonucu'nun Deger3'ünü güncelle ---
+        if (kontrolTuru)
+        {
+            var karsilastirmaOturumu = await _uow.SayimOturumlari.GetWithTurlerAsync(tur.SayimOturumuId, ct)
+                ?? throw new KeyNotFoundException("Oturum bulunamadı.");
+
+            var ilkTur = karsilastirmaOturumu.SayimTurlari
+                .Where(t => t.TurTipi == SayimTuruTip.EkipKarsilastirma)
+                .OrderBy(t => t.TurNo)
+                .First();
+
+            var mevcutSonuc = await _uow.TurSonuclari.GetByTurIdAsync(ilkTur.Id, ct)
+                ?? throw new InvalidOperationException("İlk tur sonucu bulunamadı.");
+
+            ekipKayitlari.TryGetValue(EkipRolu.Kontrol, out var kontrolDetaylar);
+
+            decimal? Miktar3(string malzemeKodu, string? lotNo) =>
+                kontrolDetaylar == null ? null :
+                kontrolDetaylar.Where(d => d.MalzemeKodu == malzemeKodu && d.LotNo == lotNo)
+                               .Sum(d => d.SayilanMiktar);
+
+            var farkVar3 = false;
+            foreach (var detay in mevcutSonuc.Detaylar)
+            {
+                // Manuel karar verilmişse dokunma
+                if (detay.KararTipi == KararTipi.Manuel) continue;
+
+                var deger3 = Miktar3(detay.MalzemeKodu, detay.LotNo);
+                detay.Deger3 = deger3;
+
+                var eslesti = deger3.HasValue && (deger3 == detay.Deger1 || deger3 == detay.Deger2);
+                detay.Durum = eslesti ? TurSonucuDetayDurum.Eslesti : TurSonucuDetayDurum.FarkVar;
+                detay.Fark = eslesti ? 0 : (deger3.HasValue && detay.Deger1.HasValue ? deger3.Value - detay.Deger1.Value : null);
+                detay.FarkYuzdesi = eslesti ? 0 : (detay.Fark.HasValue && detay.Deger1.HasValue && detay.Deger1.Value != 0
+                    ? Math.Abs(detay.Fark.Value / detay.Deger1.Value * 100) : null);
+                detay.OnaylananDeger = eslesti ? deger3 : null;
+                detay.KararTipi = eslesti ? KararTipi.Otomatik : null;
+
+                if (!eslesti) farkVar3 = true;
+            }
+
+            mevcutSonuc.EslesilenSayisi = mevcutSonuc.Detaylar.Count(d => d.Durum == TurSonucuDetayDurum.Eslesti);
+            mevcutSonuc.FarkliSayisi = mevcutSonuc.Detaylar.Count(d => d.Durum == TurSonucuDetayDurum.FarkVar);
+            mevcutSonuc.GenelDurum = farkVar3 ? SayimTuruDurum.FarkVar : SayimTuruDurum.Onaylandi;
+            mevcutSonuc.HesaplamaTarihi = DateTime.UtcNow;
+
+            // Bu kontrol turunu da kapat, ayrı TurSonucu yaratma
+            tur.Durum = farkVar3 ? SayimTuruDurum.FarkVar : SayimTuruDurum.Onaylandi;
+            tur.KapanmaTarihi = farkVar3 ? null : DateTime.UtcNow;
+
+            // Tüm açık KontrolSayimiGerekli bildirimlerini kapat
+            var acikBildirimler = await _uow.GorevBildirimleri.GetBekleyenlerByOturumAsync(
+                tur.SayimOturumuId, GorevBildirimTipi.KontrolSayimiGerekli, ct);
+            foreach (var b in acikBildirimler)
+            {
+                b.Durum = GorevBildirimDurum.Islendi;
+                b.IslemTarihi = DateTime.UtcNow;
+            }
+
+            var kontrolOturum = await _uow.SayimOturumlari.GetByIdAsync(tur.SayimOturumuId, ct)!;
+            if (!farkVar3)
+                kontrolOturum!.Durum = SayimOturumuDurum.Onaylandi;
+            else
+            {
+                var bildirim = new GorevBildirimi
+                {
+                    SayimOturumuId = tur.SayimOturumuId,
+                    SayimTuruId = turId,
+                    BildirimTipi = GorevBildirimTipi.KontrolSayimiGerekli,
+                    Durum = GorevBildirimDurum.Beklemede,
+                    Mesaj = $"Tur {tur.TurNo}: {mevcutSonuc.FarkliSayisi} malzemede fark var. Kontrol sayımı gerekli."
+                };
+                await _uow.GorevBildirimleri.AddAsync(bildirim, ct);
+            }
+
+            await _uow.SaveChangesAsync(ct);
+            return;
+        }
+
+        // --- EKİP KARŞILAŞTIRMA TURU ---
         var tumDetaylar = kayitlar.SelectMany(k => k.Detaylar).ToList();
-
         var sonucDetaylar = new List<TurSonucuDetay>();
         var farkVar = false;
-
-        var ekipKayitlari = kayitlar.ToDictionary(k => k.EkipRolu, k => k.Detaylar);
 
         var tumMalzemeler = tumDetaylar
             .Select(d => new { d.MalzemeKodu, d.MalzemeAdi, d.LotNo, d.SeriNo, d.Birim })
@@ -302,26 +383,21 @@ public class SayimOturumuService : ISayimOturumuService
 
         foreach (var malzeme in tumMalzemeler)
         {
-            var deger1 = ekipKayitlari.TryGetValue(EkipRolu.Birinci, out var k1)
-                ? k1.Where(d => d.MalzemeKodu == malzeme.MalzemeKodu && d.LotNo == malzeme.LotNo)
-                     .Sum(d => d.SayilanMiktar)
-                : (decimal?)null;
+            decimal? Miktar(ICollection<SayimKaydiDetay>? detaylar) =>
+                detaylar == null ? null :
+                detaylar.Where(d => d.MalzemeKodu == malzeme.MalzemeKodu && d.LotNo == malzeme.LotNo)
+                        .Sum(d => d.SayilanMiktar);
 
-            var deger2 = ekipKayitlari.TryGetValue(EkipRolu.Ikinci, out var k2)
-                ? k2.Where(d => d.MalzemeKodu == malzeme.MalzemeKodu && d.LotNo == malzeme.LotNo)
-                     .Sum(d => d.SayilanMiktar)
-                : ekipKayitlari.TryGetValue(EkipRolu.Kontrol, out var kk)
-                    ? kk.Where(d => d.MalzemeKodu == malzeme.MalzemeKodu && d.LotNo == malzeme.LotNo)
-                         .Sum(d => d.SayilanMiktar)
-                    : (decimal?)null;
+            var deger1 = ekipKayitlari.TryGetValue(EkipRolu.Birinci, out var k1) ? Miktar(k1) : null;
+            var deger2 = ekipKayitlari.TryGetValue(EkipRolu.Ikinci, out var k2) ? Miktar(k2) : null;
 
             var fark = deger1.HasValue && deger2.HasValue ? deger1.Value - deger2.Value : (decimal?)null;
-            var farkYuzdesi = deger1.HasValue && deger2.HasValue && deger1.Value != 0
-                ? Math.Abs(fark!.Value / deger1.Value * 100)
-                : (decimal?)null;
+            var farkYuzdesi = fark.HasValue && deger1.HasValue && deger1.Value != 0
+                ? Math.Abs(fark.Value / deger1.Value * 100) : (decimal?)null;
 
-            var durum = fark == 0 ? TurSonucuDetayDurum.Eslesti : TurSonucuDetayDurum.FarkVar;
-            if (durum == TurSonucuDetayDurum.FarkVar) farkVar = true;
+            var eslesti = deger1.HasValue && deger2.HasValue && deger1 == deger2;
+            var durum = eslesti ? TurSonucuDetayDurum.Eslesti : TurSonucuDetayDurum.FarkVar;
+            if (!eslesti) farkVar = true;
 
             sonucDetaylar.Add(new TurSonucuDetay
             {
@@ -332,15 +408,15 @@ public class SayimOturumuService : ISayimOturumuService
                 Birim = malzeme.Birim ?? string.Empty,
                 Deger1 = deger1,
                 Deger2 = deger2,
+                Deger3 = null,
                 Fark = fark,
                 FarkYuzdesi = farkYuzdesi,
                 Durum = durum,
-                OnaylananDeger = durum == TurSonucuDetayDurum.Eslesti ? deger1 : null,
-                KararTipi = durum == TurSonucuDetayDurum.Eslesti ? KararTipi.Otomatik : null
+                OnaylananDeger = eslesti ? deger1 : null,
+                KararTipi = eslesti ? KararTipi.Otomatik : null
             });
         }
 
-        //  turSonucu oluşturulup tur'a atanıyor, önce atanmıyordu
         var turSonucu = new TurSonucu
         {
             SayimTuruId = turId,

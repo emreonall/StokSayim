@@ -59,6 +59,11 @@ public class EkipRepository : Repository<Ekip>, IEkipRepository
         => await _context.Ekipler
             .Include(x => x.EkipKullanicilari)
             .FirstOrDefaultAsync(x => x.EkipKullanicilari.Any(k => k.KullaniciId == kullaniciId && k.AktifMi), ct);
+
+    public async Task AddKullaniciAsync(EkipKullanici kayit, CancellationToken ct = default)
+    {
+        await _context.Set<EkipKullanici>().AddAsync(kayit, ct);
+    }
 }
 
 public class EkipGrubuRepository : Repository<EkipGrubu>, IEkipGrubuRepository
@@ -207,6 +212,14 @@ public class GorevBildirimiRepository : Repository<GorevBildirimi>, IGorevBildir
             .Include(x => x.SayimOturumu).ThenInclude(o => o.Bolge)
             .Where(x => x.Durum == GorevBildirimDurum.Beklemede)
             .OrderBy(x => x.OlusturmaTarihi)
+            .ToListAsync(ct);
+
+    public async Task<IEnumerable<GorevBildirimi>> GetBekleyenlerByOturumAsync(
+        int oturumuId, GorevBildirimTipi tip, CancellationToken ct = default)
+        => await _context.GorevBildirimleri
+            .Where(x => x.SayimOturumuId == oturumuId &&
+                        x.BildirimTipi == tip &&
+                        x.Durum == GorevBildirimDurum.Beklemede)
             .ToListAsync(ct);
 
     public async Task<IEnumerable<GorevBildirimi>> GetByOturumuIdAsync(int oturumuId, CancellationToken ct = default)

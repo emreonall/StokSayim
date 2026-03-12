@@ -168,13 +168,13 @@ public class AuthService : IAuthService
 
         var secenekler = new List<GorevSecenekDto>();
 
+        // YOL 1: EkipGrubuEkip üzerinden (planlama ekipleri — Birinci/İkinci)
         foreach (var ege in ekipGrubuEkipler)
         {
             var bolge = ege.EkipGrubu.Bolge;
             var oturum = bolge?.SayimOturumu;
             if (oturum == null) continue;
 
-            // Aktif tur: Beklemede, DevamEdiyor veya KarsilastirmaBekliyor
             var aktifTur = oturum.SayimTurlari
                 .Where(t => t.Durum == SayimTuruDurum.Beklemede ||
                             t.Durum == SayimTuruDurum.DevamEdiyor ||
@@ -184,38 +184,39 @@ public class AuthService : IAuthService
 
             if (aktifTur == null) continue;
 
-            // Bu ekip bu turda katılımcı mı?
             var katilimci = aktifTur.Katilimcilar.FirstOrDefault(k => k.EkipId == ege.EkipId);
             if (katilimci == null) continue;
 
-            // Sayım kaydının durumu
-            string? kaydiDurum = null;
-            bool tamamlandi = false;
-            if (katilimci.SayimKaydiId.HasValue)
-            {
-                var kaydi = await _db.Set<SayimKaydi>()
-                    .Where(k => k.Id == katilimci.SayimKaydiId.Value)
-                    .Select(k => new { k.Durum })
-                    .FirstOrDefaultAsync(ct);
-                kaydiDurum = kaydi?.Durum.ToString();
-                tamamlandi = kaydi?.Durum == SayimKaydiDurum.Tamamlandi;
-            }
+            await Secenek(secenekler, ege.EkipId, ege.Ekip.EkipAdi, ege.EkipRolu,
+                bolge!.Id, bolge.BolgeAdi, bolge.BolgeKodu,
+                oturum.Id, aktifTur, katilimci, ct);
+        }
 
-            secenekler.Add(new GorevSecenekDto(
-                EkipId: ege.EkipId,
-                EkipAdi: ege.Ekip.EkipAdi,
-                EkipRolu: new EkipRoluDto((int)ege.EkipRolu, RolAdi(ege.EkipRolu)),
-                BolgeId: bolge!.Id,
-                BolgeAdi: bolge.BolgeAdi,
-                BolgeKodu: bolge.BolgeKodu,
-                SayimOturumuId: oturum.Id,
-                SayimTuruId: aktifTur.Id,
-                TurNo: aktifTur.TurNo,
-                TurTipi: aktifTur.TurTipi.ToString(),
-                SayimKaydiId: katilimci.SayimKaydiId,
-                SayimKaydiDurum: kaydiDurum,
-                SayimTamamlandi: tamamlandi
-            ));
+        // YOL 2: SayimTuruKatilimci üzerinden (kontrol turu ekipleri — doğrudan atananlar)
+        var katilimciTurlar = await _db.Set<SayimTuruKatilimci>()
+            .Include(k => k.SayimTuru)
+                .ThenInclude(t => t.SayimOturumu)
+                    .ThenInclude(o => o.Bolge)
+            .Include(k => k.Ekip)
+            .Where(k => ekipIdleri.Contains(k.EkipId) &&
+                        (k.SayimTuru.Durum == SayimTuruDurum.Beklemede ||
+                         k.SayimTuru.Durum == SayimTuruDurum.DevamEdiyor ||
+                         k.SayimTuru.Durum == SayimTuruDurum.KarsilastirmaBekliyor))
+            .ToListAsync(ct);
+
+        foreach (var k in katilimciTurlar)
+        {
+            var tur = k.SayimTuru;
+            var oturum = tur.SayimOturumu;
+            var bolge = oturum?.Bolge;
+            if (bolge == null) continue;
+
+            // EkipGrubuEkip yolundan zaten eklenmişse atla
+            if (secenekler.Any(s => s.EkipId == k.EkipId && s.SayimTuruId == tur.Id)) continue;
+
+            await Secenek(secenekler, k.EkipId, k.Ekip?.EkipAdi ?? string.Empty, k.EkipRolu,
+                bolge.Id, bolge.BolgeAdi, bolge.BolgeKodu,
+                oturum!.Id, tur, k, ct);
         }
 
         return new AktifGorevlerDto(kullaniciId, user.AdSoyad, secenekler);
@@ -245,6 +246,42 @@ public class AuthService : IAuthService
         );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private async Task Secenek(
+        List<GorevSecenekDto> liste,
+        int ekipId, string ekipAdi, EkipRolu ekipRolu,
+        int bolgeId, string bolgeAdi, string bolgeKodu,
+        int oturumuId, SayimTuru aktifTur, SayimTuruKatilimci katilimci,
+        CancellationToken ct)
+    {
+        string? kaydiDurum = null;
+        bool tamamlandi = false;
+        if (katilimci.SayimKaydiId.HasValue)
+        {
+            var kaydi = await _db.Set<SayimKaydi>()
+                .Where(k => k.Id == katilimci.SayimKaydiId.Value)
+                .Select(k => new { k.Durum })
+                .FirstOrDefaultAsync(ct);
+            kaydiDurum = kaydi?.Durum.ToString();
+            tamamlandi = kaydi?.Durum == SayimKaydiDurum.Tamamlandi;
+        }
+
+        liste.Add(new GorevSecenekDto(
+            EkipId: ekipId,
+            EkipAdi: ekipAdi,
+            EkipRolu: new EkipRoluDto((int)ekipRolu, RolAdi(ekipRolu)),
+            BolgeId: bolgeId,
+            BolgeAdi: bolgeAdi,
+            BolgeKodu: bolgeKodu,
+            SayimOturumuId: oturumuId,
+            SayimTuruId: aktifTur.Id,
+            TurNo: aktifTur.TurNo,
+            TurTipi: aktifTur.TurTipi.ToString(),
+            SayimKaydiId: katilimci.SayimKaydiId,
+            SayimKaydiDurum: kaydiDurum,
+            SayimTamamlandi: tamamlandi
+        ));
     }
 
     private static string RolAdi(EkipRolu rol) => rol switch

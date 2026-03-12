@@ -80,6 +80,10 @@ else
                 <GridColumn Field="Birim" HeaderText="Birim" Width="70" TextAlign="TextAlign.Center" />
                 <GridColumn Field="Deger1" HeaderText="@_deger1Baslik" Width="110" Format="N2" TextAlign="TextAlign.Right" />
                 <GridColumn Field="Deger2" HeaderText="@_deger2Baslik" Width="110" Format="N2" TextAlign="TextAlign.Right" />
+                @if (_detaylar.Any(d => d.Deger3.HasValue))
+                {
+                    <GridColumn Field="Deger3" HeaderText="@_deger3Baslik" Width="110" Format="N2" TextAlign="TextAlign.Right" />
+                }
                 <GridColumn Field="Fark" HeaderText="Fark" Width="90" Format="N2" TextAlign="TextAlign.Right">
                     <Template>
                         @{
@@ -164,6 +168,13 @@ else
                         <div style="font-size:11px; color:var(--muted)">@_deger2Baslik</div>
                         <div style="font-size:20px; font-weight:700">@(_aktifDetay.Deger2?.ToString("N2") ?? "—")</div>
                     </div>
+                    @if (_aktifDetay.Deger3.HasValue)
+                    {
+                        <div style="flex:1; text-align:center; padding:12px; background:var(--bg); border-radius:8px">
+                            <div style="font-size:11px; color:var(--muted)">@_deger3Baslik</div>
+                            <div style="font-size:20px; font-weight:700">@_aktifDetay.Deger3.Value.ToString("N2")</div>
+                        </div>
+                    }
                 </div>
                 <div class="ss-form-group">
                     <label>Onaylanan Değer *</label>
@@ -191,6 +202,7 @@ else
     private TurSonucuDto? _turSonucu;
     private string _deger1Baslik = "Ekip 1";
     private string _deger2Baslik = "Ekip 2";
+    private string _deger3Baslik = "Kontrol";
     private List<TurSonucuDetayRow> _detaylar = [];
     private string _filtre = "Tumu";
     private string _mesaj = "";
@@ -204,7 +216,7 @@ else
     private bool _kararYukleniyor = false;
 
     record TurSonucuDetayRow(int Id, string MalzemeKodu, string MalzemeAdi, string? LotNo, string? SeriNo,
-        string Birim, decimal? Deger1, decimal? Deger2, decimal? Fark, decimal? FarkYuzdesi,
+        string Birim, decimal? Deger1, decimal? Deger2, decimal? Deger3, decimal? Fark, decimal? FarkYuzdesi,
         string Durum, decimal? OnaylananDeger, string? KararTipi);
 
     private IEnumerable<TurSonucuDetayRow> FiltrelenmisDetaylar => _filtre switch
@@ -235,11 +247,12 @@ else
                 else
                 {
                     _deger1Baslik = "Birinci Ekip";
-                    _deger2Baslik = sonuc.TurTipi == "Kontrol" ? "Kontrol Ekibi" : "İkinci Ekip";
+                    _deger2Baslik = "İkinci Ekip";
+                    _deger3Baslik = "Kontrol Ekibi";
                 }
                 _detaylar = sonuc.Detaylar.Select(d => new TurSonucuDetayRow(
                     d.Id, d.MalzemeKodu, d.MalzemeAdi, d.LotNo, d.SeriNo,
-                    d.Birim, d.Deger1, d.Deger2, d.Fark, d.FarkYuzdesi,
+                    d.Birim, d.Deger1, d.Deger2, d.Deger3, d.Fark, d.FarkYuzdesi,
                     d.Durum, d.OnaylananDeger, d.KararTipi
                 )).ToList();
             }

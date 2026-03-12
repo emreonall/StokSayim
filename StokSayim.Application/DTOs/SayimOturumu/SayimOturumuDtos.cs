@@ -48,6 +48,7 @@ public record TurSonucuOzetDto(
 public record GorevBildirimDto(
     int Id,
     int SayimOturumuId,
+    int BolgeId,
     string BolgeAdi,
     int? SayimTuruId,
     int? TurNo,
@@ -80,6 +81,7 @@ public record TurSonucuDetayDto(
     string Birim,
     decimal? Deger1,
     decimal? Deger2,
+    decimal? Deger3,
     decimal? Fark,
     decimal? FarkYuzdesi,
     string Durum,

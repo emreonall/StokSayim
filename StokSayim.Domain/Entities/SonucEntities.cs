@@ -25,9 +25,10 @@ public class TurSonucuDetay : BaseEntity
     public string? SeriNo { get; set; }
     public string Birim { get; set; } = string.Empty;
 
-    // Karşılaştırılan değerler — genel amaçlı (Ekip1/ERP vs Ekip2/Kontrol)
-    public decimal? Deger1 { get; set; }
-    public decimal? Deger2 { get; set; }
+    // Karşılaştırılan değerler
+    public decimal? Deger1 { get; set; }  // Birinci Ekip / ERP
+    public decimal? Deger2 { get; set; }  // İkinci Ekip / Fiili
+    public decimal? Deger3 { get; set; }  // Kontrol Ekibi (varsa)
     public decimal? Fark { get; set; }
     public decimal? FarkYuzdesi { get; set; }
 

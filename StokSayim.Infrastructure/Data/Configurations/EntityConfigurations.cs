@@ -17,16 +17,27 @@ public class SayimPlaniConfiguration : IEntityTypeConfiguration<SayimPlani>
     }
 }
 
+public class MalzemeConfiguration : IEntityTypeConfiguration<Malzeme>
+{
+    public void Configure(EntityTypeBuilder<Malzeme> b)
+    {
+        b.HasKey(x => x.Id);
+        b.Property(x => x.MalzemeKodu).HasMaxLength(50).IsRequired();
+        b.Property(x => x.MalzemeAdi).HasMaxLength(200).IsRequired();
+        b.Property(x => x.OlcuBirimi).HasMaxLength(10).IsRequired();
+        b.Property(x => x.GuncellemeKaynagi).HasMaxLength(20);
+        b.HasIndex(x => x.MalzemeKodu).IsUnique();
+    }
+}
+
 public class ErpStokConfiguration : IEntityTypeConfiguration<ErpStok>
 {
     public void Configure(EntityTypeBuilder<ErpStok> b)
     {
         b.HasKey(x => x.Id);
         b.Property(x => x.MalzemeKodu).HasMaxLength(50).IsRequired();
-        b.Property(x => x.MalzemeAdi).HasMaxLength(200).IsRequired();
         b.Property(x => x.DepoKodu).HasMaxLength(20).IsRequired();
         b.Property(x => x.Miktar).HasPrecision(18, 4);
-        b.Property(x => x.Birim).HasMaxLength(10);
         b.Property(x => x.LotNo).HasMaxLength(50);
         b.Property(x => x.SeriNo).HasMaxLength(50);
         b.HasIndex(x => new { x.SayimPlaniId, x.MalzemeKodu, x.DepoKodu, x.LotNo });
@@ -104,11 +115,9 @@ public class SayimKaydiDetayConfiguration : IEntityTypeConfiguration<SayimKaydiD
     {
         b.HasKey(x => x.Id);
         b.Property(x => x.MalzemeKodu).HasMaxLength(50).IsRequired();
-        b.Property(x => x.MalzemeAdi).HasMaxLength(200).IsRequired();
         b.Property(x => x.SayilanMiktar).HasPrecision(18, 4);
         b.Property(x => x.LotNo).HasMaxLength(50);
         b.Property(x => x.SeriNo).HasMaxLength(50);
-        b.Property(x => x.Birim).HasMaxLength(10);
     }
 }
 
@@ -136,8 +145,10 @@ public class TurSonucuDetayConfiguration : IEntityTypeConfiguration<TurSonucuDet
     public void Configure(EntityTypeBuilder<TurSonucuDetay> b)
     {
         b.HasKey(x => x.Id);
+        b.Property(x => x.MalzemeKodu).HasMaxLength(50).IsRequired();
         b.Property(x => x.Deger1).HasPrecision(18, 4);
         b.Property(x => x.Deger2).HasPrecision(18, 4);
+        b.Property(x => x.Deger3).HasPrecision(18, 4);
         b.Property(x => x.Fark).HasPrecision(18, 4);
         b.Property(x => x.FarkYuzdesi).HasPrecision(18, 4);
         b.Property(x => x.OnaylananDeger).HasPrecision(18, 4);

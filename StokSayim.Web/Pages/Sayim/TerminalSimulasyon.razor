@@ -3,6 +3,7 @@
 @inject IAuthHttpService AuthService
 @inject ISayimOturumuHttpService OturumuService
 @inject ISayimKaydiHttpService KaydiService
+@inject MalzemeHttpService MalzemeService
 @inject NavigationManager Nav
 
 <PageTitle>El Terminali Simülasyonu</PageTitle>
@@ -152,11 +153,18 @@
             </p>
             <div class="ss-form-group">
                 <label>Malzeme Kodu *</label>
-                <SfTextBox @bind-Value="_malzemeKodu" Placeholder="Örn: MAL001" />
+                <input type="text" class="e-input" placeholder="Örn: MAL001"
+                       value="@_malzemeKodu"
+                       @oninput="@(e => _malzemeKodu = e.Value?.ToString() ?? "")"
+                       @onblur="MalzemeKoduBlur" />
             </div>
+            @if (_malzemeBulunamadi)
+            {
+                <div style="color:var(--danger); font-size:12px; margin-bottom:8px">⚠️ Malzeme bulunamadı. Lütfen kodu kontrol edin.</div>
+            }
             <div class="ss-form-group">
-                <label>Malzeme Adı *</label>
-                <SfTextBox @bind-Value="_malzemeAdi" Placeholder="Örn: Vida M6x20" />
+                <label>Malzeme Adı</label>
+                <SfTextBox Value="@_malzemeAdi" Enabled="false" Placeholder="Kod girilince otomatik dolar" />
             </div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px">
                 <div class="ss-form-group">
@@ -164,8 +172,8 @@
                     <SfNumericTextBox @bind-Value="_miktar" Min="0" Decimals="2" />
                 </div>
                 <div class="ss-form-group">
-                    <label>Birim *</label>
-                    <SfTextBox @bind-Value="_birim" Placeholder="ADET" />
+                    <label>Ölçü Birimi</label>
+                    <SfTextBox Value="@_birim" Enabled="false" Placeholder="Otomatik" />
                 </div>
             </div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px">
@@ -221,7 +229,7 @@
                                     <tr style="border-top:1px solid var(--border)">
                                         <td style="padding:5px 6px; font-weight:600">@d.MalzemeKodu</td>
                                         <td style="padding:5px 6px; color:var(--muted)">@d.MalzemeAdi</td>
-                                        <td style="padding:5px 6px; text-align:right; font-weight:600">@d.SayilanMiktar @d.Birim</td>
+                                        <td style="padding:5px 6px; text-align:right; font-weight:600">@d.SayilanMiktar @d.OlcuBirimi</td>
                                         <td style="padding:5px 6px; text-align:center">
                                             <span style="cursor:pointer; color:var(--danger)"
                                                   @onclick="@(() => _cihazListesi.Remove(d))">✕</span>
@@ -259,7 +267,7 @@
                                     <tr style="border-top:1px solid var(--border)">
                                         <td style="padding:5px 6px; font-weight:600">@d.MalzemeKodu</td>
                                         <td style="padding:5px 6px; color:var(--muted)">@d.MalzemeAdi</td>
-                                        <td style="padding:5px 6px; text-align:right; font-weight:600">@d.SayilanMiktar @d.Birim</td>
+                                        <td style="padding:5px 6px; text-align:right; font-weight:600">@d.SayilanMiktar @d.OlcuBirimi</td>
                                     </tr>
                                 }
                             </tbody>
@@ -292,7 +300,7 @@
                 <tr style="border-bottom:1px solid var(--border)">
                     <td style="padding:6px 0; font-weight:600">@d.MalzemeKodu</td>
                     <td style="padding:6px 0">@d.MalzemeAdi</td>
-                    <td style="padding:6px 0; text-align:right; font-weight:600">@d.SayilanMiktar @d.Birim</td>
+                    <td style="padding:6px 0; text-align:right; font-weight:600">@d.SayilanMiktar @d.OlcuBirimi</td>
                 </tr>
             }
         </table>
@@ -387,13 +395,16 @@
     private SayimKaydiDto? _kaydi;
 
     // Cihaz üzerindeki geçici liste (henüz API'ye gönderilmemiş)
-    private List<SayimKaydiDetayEkleDto> _cihazListesi = new();
+    private record CihazSatir(string MalzemeKodu, string MalzemeAdi, string OlcuBirimi,
+        string? LotNo, string? SeriNo, decimal SayilanMiktar, string? Notlar);
+    private List<CihazSatir> _cihazListesi = new();
 
     // Malzeme form
     private string _malzemeKodu = "";
     private string _malzemeAdi = "";
+    private bool _malzemeBulunamadi = false;
     private decimal _miktar = 0;
-    private string _birim = "ADET";
+    private string _birim = "";
     private string? _lotNo;
     private string? _seriNo;
 
@@ -488,25 +499,46 @@
         finally { _yukleniyor = false; }
     }
 
+    // Malzeme kodu blur — API'den malzeme adı ve birimini getir
+    private async void MalzemeKoduBlur()
+    {
+        _malzemeAdi = "";
+        _birim = "";
+        _malzemeBulunamadi = false;
+
+        if (string.IsNullOrWhiteSpace(_malzemeKodu)) return;
+
+        var malzeme = await MalzemeService.GetByKodAsync(_malzemeKodu.Trim().ToUpper());
+        if (malzeme != null)
+        {
+            _malzemeAdi = malzeme.MalzemeAdi;
+            _birim = malzeme.OlcuBirimi;
+        }
+        else
+        {
+            _malzemeBulunamadi = true;
+        }
+        StateHasChanged();
+    }
+
     // ADIM 4: Malzeme ekle — cihaz listesine ekle (API'ye henüz gönderme)
     private void MalzemeEkle()
     {
-        if (string.IsNullOrWhiteSpace(_malzemeKodu) || string.IsNullOrWhiteSpace(_malzemeAdi))
+        if (string.IsNullOrWhiteSpace(_malzemeKodu) || _malzemeBulunamadi)
         {
             _hata = "Malzeme kodu ve adı zorunludur."; return;
         }
         if (_miktar <= 0) { _hata = "Miktar 0'dan büyük olmalıdır."; return; }
-        if (string.IsNullOrWhiteSpace(_birim)) { _hata = "Birim zorunludur."; return; }
 
         MesajTemizle();
-        _cihazListesi.Add(new SayimKaydiDetayEkleDto(
-            _malzemeKodu.Trim().ToUpper(),
-            _malzemeAdi.Trim(),
-            string.IsNullOrWhiteSpace(_lotNo) ? null : _lotNo.Trim(),
-            string.IsNullOrWhiteSpace(_seriNo) ? null : _seriNo.Trim(),
-            _miktar,
-            _birim.Trim().ToUpper(),
-            null
+        _cihazListesi.Add(new CihazSatir(
+            MalzemeKodu: _malzemeKodu.Trim().ToUpper(),
+            MalzemeAdi: _malzemeAdi,
+            OlcuBirimi: _birim,
+            LotNo: string.IsNullOrWhiteSpace(_lotNo) ? null : _lotNo.Trim(),
+            SeriNo: string.IsNullOrWhiteSpace(_seriNo) ? null : _seriNo.Trim(),
+            SayilanMiktar: _miktar,
+            Notlar: null
         ));
         _basari = $"{_malzemeKodu.Trim().ToUpper()} cihaz listesine eklendi. ({_cihazListesi.Count} satır bekliyor)";
         FormTemizle();
@@ -520,7 +552,9 @@
         _yukleniyor = true;
         try
         {
-            var sonuc = await KaydiService.TopluDetayEkleAsync(_kaydi.Id, _cihazListesi);
+            var dtolar = _cihazListesi.Select(c => new SayimKaydiDetayEkleDto(
+                c.MalzemeKodu, c.LotNo, c.SeriNo, c.SayilanMiktar, c.Notlar));
+            var sonuc = await KaydiService.TopluDetayEkleAsync(_kaydi.Id, dtolar);
             if (sonuc != null)
             {
                 // Başarılı — cihaz listesini temizle, DB listesini güncelle
@@ -560,7 +594,7 @@
 
     private void FormTemizle()
     {
-        _malzemeKodu = ""; _malzemeAdi = ""; _miktar = 0;
+        _malzemeKodu = ""; _malzemeAdi = ""; _birim = ""; _malzemeBulunamadi = false; _miktar = 0;
         _birim = "ADET"; _lotNo = null; _seriNo = null;
     }
 

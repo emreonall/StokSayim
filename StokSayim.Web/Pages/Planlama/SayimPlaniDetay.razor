@@ -111,7 +111,13 @@ else
                                 {
                                     <hr class="ss-divider" />
                                     <AuthorizeView Roles="Admin,SayimSorumlusu">
-                                        <div style="font-size:13px; font-weight:600; margin-bottom:8px">ERP Stok İmport</div>
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+                                            <div style="font-size:13px; font-weight:600">ERP Stok İmport</div>
+                                            <a href="templates/StokSayim_Import_Sablonlari.xlsx" download
+                                                   style="font-size:11px; color:var(--primary); text-decoration:none">
+                                                📥 Şablon İndir
+                                            </a>
+                                        </div>
                                         <InputFile OnChange="DosyaSec" accept=".xlsx,.xls" style="margin-bottom:8px; display:block" />
                                         <SfButton CssClass="e-outline" Disabled="@(_seciliDosya == null || _importYukleniyor)"
                                                   @onclick="ErpImport">

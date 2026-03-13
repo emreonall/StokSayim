@@ -13,6 +13,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<EkipKullanici> EkipKullanicilari => Set<EkipKullanici>();
     public DbSet<EkipGrubu> EkipGruplari => Set<EkipGrubu>();
     public DbSet<EkipGrubuEkip> EkipGrubuEkipler => Set<EkipGrubuEkip>();
+    public DbSet<Malzeme> Malzemeler => Set<Malzeme>();
     public DbSet<SayimPlani> SayimPlanlari => Set<SayimPlani>();
     public DbSet<SayimPlanDepoKodu> SayimPlanDepoKodlari => Set<SayimPlanDepoKodu>();
     public DbSet<ErpStok> ErpStoklar => Set<ErpStok>();

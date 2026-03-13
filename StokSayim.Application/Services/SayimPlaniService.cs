@@ -126,9 +126,13 @@ public class SayimPlaniService : ISayimPlaniService
         if (uzanti == ".xlsx" || uzanti == ".xls")
         {
             using var wb = new XLWorkbook(dosya);
-            var ws = wb.Worksheet(1);
+            // "ERP_Stok_Import" sheet adıyla bul, yoksa ilk sheet
+            var ws = wb.Worksheets.Any(s => s.Name == "ERP_Stok_Import")
+                ? wb.Worksheet("ERP_Stok_Import")
+                : wb.Worksheet(1);
             // İlk satır başlık, ikinci satır açıklama — ikisini de atla
-            var satirlar = ws.RangeUsed()?.RowsUsed().Skip(2).ToList() ?? [];
+            // Satır 1: bilgi başlığı, Satır 2: kolon adları, Satır 3: açıklamalar → Skip(3)
+            var satirlar = ws.RangeUsed()?.RowsUsed().Skip(3).ToList() ?? [];
 
             foreach (var satir in satirlar)
             {
@@ -137,10 +141,8 @@ public class SayimPlaniService : ISayimPlaniService
                 try
                 {
                     var malzemeKodu = satir.Cell(1).GetString().Trim();
-                    var malzemeAdi = satir.Cell(2).GetString().Trim();
-                    var depoKodu = satir.Cell(3).GetString().Trim();
-                    var miktarStr = satir.Cell(4).GetString().Trim();
-                    var birim = satir.Cell(5).GetString().Trim();
+                    var depoKodu = satir.Cell(2).GetString().Trim();
+                    var miktarStr = satir.Cell(3).GetString().Trim();
 
                     // Zorunlu alan kontrolleri
                     if (string.IsNullOrEmpty(malzemeKodu))
@@ -154,13 +156,6 @@ public class SayimPlaniService : ISayimPlaniService
                     {
                         hataliSatir++;
                         hatalar.Add($"Satır {satirNo}: '{depoKodu}' depo kodu plan kapsamında değil. (Malzeme: {malzemeKodu})");
-                        continue;
-                    }
-
-                    if (string.IsNullOrEmpty(birim))
-                    {
-                        hataliSatir++;
-                        hatalar.Add($"Satır {satirNo}: Birim boş olamaz. (Malzeme: {malzemeKodu})");
                         continue;
                     }
 
@@ -184,12 +179,10 @@ public class SayimPlaniService : ISayimPlaniService
                     {
                         SayimPlaniId = id,
                         MalzemeKodu = malzemeKodu,
-                        MalzemeAdi = malzemeAdi,
                         DepoKodu = depoKodu,
                         Miktar = miktar,
-                        Birim = birim,
-                        LotNo = satir.Cell(6).GetString().Trim().NullIfEmpty(),
-                        SeriNo = satir.Cell(7).GetString().Trim().NullIfEmpty(),
+                        LotNo = satir.Cell(4).GetString().Trim().NullIfEmpty(),
+                        SeriNo = satir.Cell(5).GetString().Trim().NullIfEmpty(),
                         ImportTarihi = DateTime.UtcNow,
                         ImportDosyaAdi = dosyaAdi,
                         OlusturanKullaniciId = kullaniciId
@@ -223,5 +216,3 @@ public class SayimPlaniService : ISayimPlaniService
         );
     }
 }
-
-

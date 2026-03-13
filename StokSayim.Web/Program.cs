@@ -36,5 +36,6 @@ builder.Services.AddScoped<ISayimOturumuHttpService, SayimOturumuHttpService>();
 builder.Services.AddScoped<ISayimKaydiHttpService, SayimKaydiHttpService>();
 builder.Services.AddScoped<IRaporHttpService, RaporHttpService>();
 builder.Services.AddScoped<IKullaniciHttpService, KullaniciHttpService>();
+builder.Services.AddScoped<MalzemeHttpService>();
 
 await builder.Build().RunAsync();

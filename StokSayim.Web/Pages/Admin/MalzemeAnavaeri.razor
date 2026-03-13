@@ -1,0 +1,211 @@
+@page "/admin/malzeme-anaverisi"
+@attribute [Authorize(Roles = "Admin,SayimSorumlusu")]
+@inject MalzemeHttpService MalzemeService
+
+<PageTitle>Malzeme Ana Verisi</PageTitle>
+
+<div class="ss-page-header">
+    <div>
+        <h1 class="ss-page-title">🗄 Malzeme Ana Verisi</h1>
+        <p class="ss-page-subtitle">@(_malzemeler.Count) malzeme kayıtlı</p>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center">
+        <a href="templates/StokSayim_Import_Sablonlari.xlsx" download
+               style="font-size:12px; color:var(--primary); text-decoration:none; padding:6px 12px; border:1px solid var(--primary); border-radius:6px">
+            📥 Şablon İndir
+        </a>
+        <SfButton CssClass="e-primary" @onclick="ImportPanelAc">📤 Import Et</SfButton>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_mesaj))
+{
+    <div class="ss-alert @(_hata ? "ss-alert-danger" : "ss-alert-success")">@_mesaj</div>
+}
+
+@* Import Paneli *@
+@if (_importPanelAcik)
+{
+    <div class="ss-card" style="border:2px solid var(--primary); margin-bottom:16px">
+        <div class="ss-card-title">📤 Malzeme Ana Veri Import</div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px">
+            Excel dosyası: <strong>MalzemeKodu</strong>, <strong>MalzemeAdi</strong>, <strong>OlcuBirimi</strong> kolonlarını içermelidir.
+            Mevcut kayıtlar güncellenir, yeni kodlar eklenir.
+        </p>
+        <div style="display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap">
+            <div>
+                <InputFile OnChange="DosyaSec" accept=".xlsx,.xls" style="display:block; margin-bottom:8px" />
+                <div style="font-size:11px; color:var(--muted)">Şablon için "Malzeme_Import" sheet'ini kullanın</div>
+            </div>
+            <div style="display:flex; gap:8px">
+                <SfButton CssClass="e-primary" Disabled="@(_seciliDosya == null || _importYukleniyor)"
+                          @onclick="ImportEt">
+                    @(_importYukleniyor ? "Yükleniyor..." : "▶ Başlat")
+                </SfButton>
+                <SfButton CssClass="e-outline" @onclick="ImportPanelKapat">İptal</SfButton>
+            </div>
+        </div>
+
+        @if (_importSonuc != null)
+        {
+            <div class="ss-alert @(_importSonuc.HataliSatir == 0 ? "ss-alert-success" : "ss-alert-warn")" style="margin-top:12px">
+                <div style="font-weight:600; margin-bottom:4px">
+                    ✅ @_importSonuc.EklenenSatir eklendi &nbsp;·&nbsp;
+                    🔄 @_importSonuc.GuncelleneSatir güncellendi &nbsp;·&nbsp;
+                    ⚠️ @_importSonuc.HataliSatir hatalı
+                    <span style="color:var(--muted); font-weight:400">(Toplam: @_importSonuc.ToplamSatir satır)</span>
+                </div>
+                @if (_importSonuc.Hatalar != null && _importSonuc.Hatalar.Any())
+                {
+                    <details>
+                        <summary style="cursor:pointer; font-size:12px">Hata detayları (@_importSonuc.HataliSatir satır)</summary>
+                        <div style="margin-top:6px; max-height:120px; overflow-y:auto">
+                            @foreach (var hata in _importSonuc.Hatalar)
+                            {
+                                <div style="font-size:12px; color:var(--danger)">• @hata</div>
+                            }
+                        </div>
+                    </details>
+                }
+            </div>
+        }
+    </div>
+}
+
+@* Liste *@
+@if (_yukleniyor)
+{
+    <div class="ss-loading"><SfSpinner Visible="true" /> Yükleniyor...</div>
+}
+else
+{
+    <div class="ss-card">
+        <div style="display:flex; gap:8px; margin-bottom:12px; align-items:center">
+            <input type="text" value="@_aramaMetni" @oninput="Ara" placeholder="Kod veya isimle ara..." class="e-input e-small" style="width:260px" />
+            <span style="font-size:12px; color:var(--muted)">@_filtrelenmis.Count kayıt gösteriliyor</span>
+        </div>
+
+        <SfGrid DataSource="@_filtrelenmis" AllowPaging="true" AllowSorting="true">
+            <GridPageSettings PageSize="20" />
+            <GridColumns>
+                <GridColumn Field="MalzemeKodu" HeaderText="Malzeme Kodu" Width="150" />
+                <GridColumn Field="MalzemeAdi" HeaderText="Malzeme Adı" Width="280" />
+                <GridColumn Field="OlcuBirimi" HeaderText="Birim" Width="80" TextAlign="TextAlign.Center" />
+                <GridColumn Field="AktifMi" HeaderText="Durum" Width="90" TextAlign="TextAlign.Center">
+                    <Template>
+                        @{
+                            var row = (context as MalzemeDto)!;
+                        }
+                        <span style="font-size:11px; padding:2px 8px; border-radius:4px;
+                            background:@(row.AktifMi ? "var(--success-bg,#f0fdf4)" : "var(--muted-bg,#f3f4f6)");
+                            color:@(row.AktifMi ? "var(--success,#16a34a)" : "var(--muted)")">
+                            @(row.AktifMi ? "Aktif" : "Pasif")
+                        </span>
+                    </Template>
+                </GridColumn>
+                <GridColumn Field="GuncellemeKaynagi" HeaderText="Kaynak" Width="100" TextAlign="TextAlign.Center" />
+                <GridColumn Field="SonGuncellemeTarihi" HeaderText="Son Güncelleme" Width="150"
+                            Format="dd.MM.yyyy HH:mm" TextAlign="TextAlign.Center" />
+            </GridColumns>
+        </SfGrid>
+    </div>
+}
+
+@code {
+    private List<MalzemeDto> _malzemeler = new();
+    private List<MalzemeDto> _filtrelenmis = new();
+    private bool _yukleniyor = true;
+    private bool _importPanelAcik = false;
+    private bool _importYukleniyor = false;
+    private bool _hata = false;
+    private string _mesaj = "";
+    private string _aramaMetni = "";
+    private IBrowserFile? _seciliDosya;
+    private MalzemeImportDto? _importSonuc;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Yukle();
+    }
+
+    private async Task Yukle()
+    {
+        _yukleniyor = true;
+        try
+        {
+            var liste = await MalzemeService.GetAllAsync();
+            _malzemeler = liste?.ToList() ?? new();
+            Filtrele();
+        }
+        catch (Exception ex)
+        {
+            _hata = true;
+            _mesaj = $"Yükleme hatası: {ex.Message}";
+        }
+        finally { _yukleniyor = false; }
+    }
+
+    private void Filtrele()
+    {
+        if (string.IsNullOrWhiteSpace(_aramaMetni))
+            _filtrelenmis = _malzemeler.ToList();
+        else
+        {
+            var ara = _aramaMetni.ToLower();
+            _filtrelenmis = _malzemeler
+                .Where(m => m.MalzemeKodu.ToLower().Contains(ara) ||
+                            m.MalzemeAdi.ToLower().Contains(ara))
+                .ToList();
+        }
+    }
+
+    private void Ara(Microsoft.AspNetCore.Components.ChangeEventArgs e)
+    {
+        _aramaMetni = e.Value?.ToString() ?? "";
+        Filtrele();
+    }
+
+    private void DosyaSec(InputFileChangeEventArgs e)
+    {
+        _seciliDosya = e.File;
+        _importSonuc = null;
+    }
+
+    private void ImportPanelAc()
+    {
+        _importPanelAcik = true;
+        _importSonuc = null;
+        _seciliDosya = null;
+        _mesaj = "";
+    }
+
+    private void ImportPanelKapat()
+    {
+        _importPanelAcik = false;
+        _importSonuc = null;
+        _seciliDosya = null;
+    }
+
+    private async Task ImportEt()
+    {
+        if (_seciliDosya == null) return;
+        _importYukleniyor = true;
+        _importSonuc = null;
+        try
+        {
+            _importSonuc = await MalzemeService.ImportAsync(_seciliDosya);
+            if (_importSonuc != null)
+            {
+                _hata = false;
+                _mesaj = $"Import tamamlandı: {_importSonuc.EklenenSatir} eklendi, {_importSonuc.GuncelleneSatir} güncellendi.";
+                await Yukle();
+            }
+        }
+        catch (Exception ex)
+        {
+            _hata = true;
+            _mesaj = $"Import hatası: {ex.Message}";
+        }
+        finally { _importYukleniyor = false; }
+    }
+}

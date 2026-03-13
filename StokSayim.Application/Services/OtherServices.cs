@@ -160,7 +160,10 @@ public class SayimKaydiService : ISayimKaydiService
     public async Task<SayimKaydiDto?> GetByIdAsync(int id, CancellationToken ct = default)
     {
         var kaydi = await _uow.SayimKayitlari.GetWithDetaylarAsync(id, ct);
-        return kaydi == null ? null : MapToDto(kaydi);
+        if (kaydi == null) return null;
+        var kodlar = kaydi.Detaylar.Select(d => d.MalzemeKodu).Distinct().ToList();
+        var malzemeler = await _uow.Malzemeler.GetDictionaryByKodlarAsync(kodlar, ct);
+        return MapToDto(kaydi, malzemeler);
     }
 
     public async Task<SayimKaydiDto> AcAsync(int turId, int ekipId, string kullaniciId, CancellationToken ct = default)
@@ -178,7 +181,9 @@ public class SayimKaydiService : ISayimKaydiService
                 ?? throw new KeyNotFoundException($"Mevcut kayıt bulunamadı: {katilimci.SayimKaydiId}");
             if (mevcutKaydi.Durum == SayimKaydiDurum.Tamamlandi)
                 throw new InvalidOperationException("Bu ekibin sayımı zaten tamamlanmış.");
-            return MapToDto(mevcutKaydi);
+            var mevcutKodlar = mevcutKaydi.Detaylar.Select(d => d.MalzemeKodu).Distinct().ToList();
+            var mevcutMalzemeler = await _uow.Malzemeler.GetDictionaryByKodlarAsync(mevcutKodlar, ct);
+            return MapToDto(mevcutKaydi, mevcutMalzemeler);
         }
 
         var kaydi = new SayimKaydi
@@ -203,7 +208,7 @@ public class SayimKaydiService : ISayimKaydiService
 
         await _uow.SaveChangesAsync(ct);
 
-        return MapToDto(kaydi);
+        return MapToDto(kaydi, new Dictionary<string, Malzeme>());
     }
 
     public async Task DetayEkleAsync(int kaydiId, SayimKaydiDetayEkleDto request, CancellationToken ct = default)
@@ -218,11 +223,9 @@ public class SayimKaydiService : ISayimKaydiService
         {
             SayimKaydiId = kaydiId,
             MalzemeKodu = request.MalzemeKodu,
-            MalzemeAdi = request.MalzemeAdi,
             LotNo = request.LotNo,
             SeriNo = request.SeriNo,
             SayilanMiktar = request.SayilanMiktar,
-            Birim = request.Birim,
             Notlar = request.Notlar
         };
 
@@ -257,21 +260,13 @@ public class SayimKaydiService : ISayimKaydiService
                 hatalar.Add($"Satır {satirNo}: Miktar sıfırdan büyük olmalıdır. (Malzeme: {dto.MalzemeKodu})");
                 continue;
             }
-            if (string.IsNullOrWhiteSpace(dto.Birim))
-            {
-                hatalar.Add($"Satır {satirNo}: Birim boş olamaz. (Malzeme: {dto.MalzemeKodu})");
-                continue;
-            }
-
             eklenecekler.Add(new SayimKaydiDetay
             {
                 SayimKaydiId = kaydiId,
                 MalzemeKodu = dto.MalzemeKodu.Trim().ToUpper(),
-                MalzemeAdi = dto.MalzemeAdi?.Trim() ?? string.Empty,
                 LotNo = string.IsNullOrWhiteSpace(dto.LotNo) ? null : dto.LotNo.Trim(),
                 SeriNo = string.IsNullOrWhiteSpace(dto.SeriNo) ? null : dto.SeriNo.Trim(),
                 SayilanMiktar = dto.SayilanMiktar,
-                Birim = dto.Birim.Trim().ToUpper(),
                 Notlar = dto.Notlar
             });
         }
@@ -298,11 +293,9 @@ public class SayimKaydiService : ISayimKaydiService
             ?? throw new KeyNotFoundException($"Detay bulunamadı: {detayId}");
 
         detay.MalzemeKodu = request.MalzemeKodu;
-        detay.MalzemeAdi = request.MalzemeAdi;
         detay.LotNo = request.LotNo;
         detay.SeriNo = request.SeriNo;
         detay.SayilanMiktar = request.SayilanMiktar;
-        detay.Birim = request.Birim;
         detay.Notlar = request.Notlar;
         detay.GuncellemeTarihi = DateTime.UtcNow;
         await _uow.SaveChangesAsync(ct);
@@ -348,7 +341,7 @@ public class SayimKaydiService : ISayimKaydiService
         }
     }
 
-    private static SayimKaydiDto MapToDto(SayimKaydi k) => new(
+    private static SayimKaydiDto MapToDto(SayimKaydi k, Dictionary<string, Malzeme> malzemeler) => new(
         Id: k.Id,
         SayimTuruId: k.SayimTuruId,
         EkipId: k.EkipId,
@@ -363,14 +356,209 @@ public class SayimKaydiService : ISayimKaydiService
         Detaylar: k.Detaylar.Select(d => new SayimKaydiDetayDto(
             Id: d.Id,
             MalzemeKodu: d.MalzemeKodu,
-            MalzemeAdi: d.MalzemeAdi,
+            MalzemeAdi: malzemeler.TryGetValue(d.MalzemeKodu, out var m) ? m.MalzemeAdi : d.MalzemeKodu,
             LotNo: d.LotNo,
             SeriNo: d.SeriNo,
             SayilanMiktar: d.SayilanMiktar,
-            Birim: d.Birim,
+            OlcuBirimi: malzemeler.TryGetValue(d.MalzemeKodu, out var mb) ? mb.OlcuBirimi : string.Empty,
             Notlar: d.Notlar
         ))
     );
+
+    public async Task<IEnumerable<AcikSayimKaydiDto>> GetAcikKayitlarByPlanIdAsync(int planId, CancellationToken ct = default)
+    {
+        // Oturumları AktifTurNo ile birlikte çek
+        var oturumlar = await _uow.SayimOturumlari.Query()
+            .Include(o => o.Bolge)
+            .Include(o => o.SayimTurlari)
+                .ThenInclude(t => t.Katilimcilar)
+                    .ThenInclude(k => k.Ekip)
+                        .ThenInclude(e => e.EkipKullanicilari)
+                            .ThenInclude(ek => ek.Kullanici)
+            .Include(o => o.SayimTurlari)
+                .ThenInclude(t => t.SayimKayitlari)
+                    .ThenInclude(k => k.SayimYapanKullanici)
+            .Include(o => o.SayimTurlari)
+                .ThenInclude(t => t.SayimKayitlari)
+                    .ThenInclude(k => k.Ekip)
+            .Where(o => o.SayimPlaniId == planId)
+            .ToListAsync(ct);
+
+        var sonuc = new List<AcikSayimKaydiDto>();
+
+        foreach (var oturum in oturumlar)
+        {
+            // Onaylanmış oturumları atla
+            if (oturum.Durum == SayimOturumuDurum.Onaylandi) continue;
+
+            // Aktif turdaki katılımcıları listele — kayıt olsun olmasın
+            var aktifTur = oturum.SayimTurlari
+                .FirstOrDefault(t => t.TurNo == oturum.AktifTurNo);
+            if (aktifTur == null) continue;
+
+            foreach (var katilimci in aktifTur.Katilimcilar)
+            {
+                var kullaniciAdlari = katilimci.Ekip?.EkipKullanicilari
+                    .Select(ek => ek.Kullanici?.AdSoyad)
+                    .Where(ad => !string.IsNullOrWhiteSpace(ad))
+                    .ToList() ?? [];
+
+                sonuc.Add(new AcikSayimKaydiDto(
+                    KatilimciId: katilimci.Id,
+                    EkipId: katilimci.EkipId,
+                    SayimTuruId: aktifTur.Id,
+                    EkipAdi: katilimci.Ekip?.EkipAdi ?? "",
+                    EkipRoluAdi: katilimci.EkipRolu.ToString(),
+                    BolgeAdi: oturum.Bolge?.BolgeAdi ?? "",
+                    TurNo: aktifTur.TurNo,
+                    KullaniciAdlari: kullaniciAdlari.Any() ? string.Join(", ", kullaniciAdlari) : ""
+                ));
+            }
+        }
+
+        return sonuc;
+    }
+
+    public async Task<OfflineImportSonucDto> OfflineImportAsync(int katilimciId, Stream dosya, string dosyaAdi, string kullaniciId, bool tamamla = false, CancellationToken ct = default)
+    {
+        // Katılımcıyı bul
+        var katilimci = await _uow.SayimTurlari.Query()
+            .Include(t => t.Katilimcilar)
+            .SelectMany(t => t.Katilimcilar)
+            .FirstOrDefaultAsync(k => k.Id == katilimciId, ct)
+            ?? throw new KeyNotFoundException($"Katılımcı bulunamadı: {katilimciId}");
+
+        var turId = katilimci.SayimTuruId;
+
+        // Mevcut kaydı bul veya yeni oluştur
+        var kaydi = await _uow.SayimKayitlari.Query()
+            .FirstOrDefaultAsync(k => k.SayimTuruId == katilimci.SayimTuruId
+                && k.EkipId == katilimci.EkipId, ct);
+
+        if (kaydi == null)
+        {
+            kaydi = new SayimKaydi
+            {
+                SayimTuruId = katilimci.SayimTuruId,
+                EkipId = katilimci.EkipId,
+                EkipRolu = katilimci.EkipRolu,
+                SayimYapanKullaniciId = kullaniciId,
+                BaslangicTarihi = DateTime.UtcNow,
+                Durum = SayimKaydiDurum.Devam,
+                OlusturanKullaniciId = kullaniciId
+            };
+            await _uow.SayimKayitlari.AddAsync(kaydi, ct);
+            await _uow.SaveChangesAsync(ct);
+
+            // Katılımcıya kayıt bağla
+            katilimci.SayimKaydiId = kaydi.Id;
+            await _uow.SaveChangesAsync(ct);
+        }
+
+        var kaydiId = kaydi.Id;
+
+        using var wb = new ClosedXML.Excel.XLWorkbook(dosya);
+        var ws = wb.Worksheets.Any(s => s.Name == "OfflineKayit")
+            ? wb.Worksheet("OfflineKayit")
+            : wb.Worksheets.First();
+
+        var satirlar = ws.RangeUsed()?.RowsUsed().Skip(3).ToList() ?? [];
+        var hatalar = new List<string>();
+        var eklenecekler = new List<SayimKaydiDetayEkleDto>();
+        int hatali = 0;
+
+        foreach (var satir in satirlar)
+        {
+            var kod = satir.Cell(1).GetString().Trim().ToUpper();
+            var miktarStr = satir.Cell(2).GetString().Trim();
+            var lotNo = satir.Cell(3).GetString().Trim();
+            var seriNo = satir.Cell(4).GetString().Trim();
+
+            if (string.IsNullOrWhiteSpace(kod)) { hatalar.Add($"Satır {satir.RowNumber()}: Malzeme kodu boş."); hatali++; continue; }
+            if (!decimal.TryParse(miktarStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var miktar) || miktar < 0)
+            { hatalar.Add($"Satır {satir.RowNumber()}: Geçersiz miktar '{miktarStr}'."); hatali++; continue; }
+
+            eklenecekler.Add(new SayimKaydiDetayEkleDto(
+                MalzemeKodu: kod,
+                LotNo: string.IsNullOrWhiteSpace(lotNo) ? null : lotNo,
+                SeriNo: string.IsNullOrWhiteSpace(seriNo) ? null : seriNo,
+                SayilanMiktar: miktar,
+                Notlar: null
+            ));
+        }
+
+        if (eklenecekler.Any())
+        {
+            var sonuc = await TopluDetayEkleAsync(kaydiId, eklenecekler, ct);
+
+            var karsilastirmaTetiklendi = false;
+            if (tamamla)
+            {
+                var kaydiBitir = await _uow.SayimKayitlari.GetByIdAsync(kaydiId, ct);
+                if (kaydiBitir != null)
+                {
+                    kaydiBitir.Durum = SayimKaydiDurum.Tamamlandi;
+                    kaydiBitir.TamamlanmaTarihi = DateTime.UtcNow;
+                    await _uow.SaveChangesAsync(ct);
+                }
+
+                // Turdaki katılımcı sayısı kadar tamamlanmış kayıt varsa karşılaştırma tetikle
+                karsilastirmaTetiklendi = await KarsilastirmaHazirMiAsync(turId, ct);
+            }
+
+            return new OfflineImportSonucDto(
+                Basarili: hatali == 0 && sonuc.HataliSatir == 0,
+                KaydiId: kaydiId,
+                TurId: turId,
+                EklenenSatir: sonuc.EklenenSatir,
+                HataliSatir: hatali + sonuc.HataliSatir,
+                Hatalar: hatalar.Concat(sonuc.Hatalar).ToList(),
+                KarsilastirmaTetiklendi: karsilastirmaTetiklendi
+            );
+        }
+
+        var karsilastirmaTetiklendi2 = false;
+        if (tamamla)
+        {
+            var kaydiBitir = await _uow.SayimKayitlari.GetByIdAsync(kaydiId, ct);
+            if (kaydiBitir != null)
+            {
+                kaydiBitir.Durum = SayimKaydiDurum.Tamamlandi;
+                kaydiBitir.TamamlanmaTarihi = DateTime.UtcNow;
+                await _uow.SaveChangesAsync(ct);
+            }
+
+            karsilastirmaTetiklendi2 = await KarsilastirmaHazirMiAsync(turId, ct);
+        }
+
+        return new OfflineImportSonucDto(
+            Basarili: hatali == 0,
+            KaydiId: kaydiId,
+            TurId: turId,
+            EklenenSatir: 0,
+            HataliSatir: hatali,
+            Hatalar: hatalar,
+            KarsilastirmaTetiklendi: karsilastirmaTetiklendi2
+        );
+    }
+
+    private async Task<bool> KarsilastirmaHazirMiAsync(int turId, CancellationToken ct)
+    {
+        var tur = await _uow.SayimTurlari.Query()
+            .Include(t => t.Katilimcilar)
+            .Include(t => t.SayimKayitlari)
+            .FirstOrDefaultAsync(t => t.Id == turId, ct);
+        if (tur == null) return false;
+
+        var katilimciSayisi = tur.Katilimcilar.Count;
+        var tamamlananKayit = tur.SayimKayitlari.Count(k => k.Durum == SayimKaydiDurum.Tamamlandi);
+
+        // EkipKarsilastirma: tüm katılımcıların kaydı tamamlanmalı
+        // EkipKontrol: tek ekip sayar, 1 tamamlanmış kayıt yeterli
+        return tur.TurTipi == SayimTuruTip.EkipKarsilastirma
+            ? tamamlananKayit >= katilimciSayisi
+            : tamamlananKayit >= 1;
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -509,6 +697,14 @@ public class RaporService : IRaporService
         var oturumlar = (await _uow.SayimOturumlari.GetByPlanIdAsync(planId, ct)).ToList();
         var erpStoklar = (await _uow.ErpStoklar.GetByPlanIdAsync(planId, ct)).ToList();
 
+        // Malzeme kodlarını önceden yükle
+        var tumKodlar = oturumlar
+            .SelectMany(o => o.SayimTurlari)
+            .Where(t => t.TurSonucu != null)
+            .SelectMany(t => t.TurSonucu!.Detaylar)
+            .Select(d => d.MalzemeKodu).Distinct().ToList();
+        var malzemeSozlugu = await _uow.Malzemeler.GetDictionaryByKodlarAsync(tumKodlar);
+
         var farkDetaylari = new List<FarkDetayDto>();
 
         foreach (var oturum in oturumlar)
@@ -523,13 +719,14 @@ public class RaporService : IRaporService
             foreach (var detay in erpTuru.TurSonucu.Detaylar.Where(d => d.Durum == TurSonucuDetayDurum.FarkVar))
             {
                 var erpKayit = erpStoklar.FirstOrDefault(e => e.MalzemeKodu == detay.MalzemeKodu && e.LotNo == detay.LotNo);
+                malzemeSozlugu.TryGetValue(detay.MalzemeKodu, out var malzeme);
 
                 farkDetaylari.Add(new FarkDetayDto(
                     MalzemeKodu: detay.MalzemeKodu,
-                    MalzemeAdi: detay.MalzemeAdi,
+                    MalzemeAdi: malzeme?.MalzemeAdi ?? detay.MalzemeKodu,
                     LotNo: detay.LotNo,
                     SeriNo: detay.SeriNo,
-                    Birim: detay.Birim,
+                    Birim: malzeme?.OlcuBirimi ?? string.Empty,
                     DepoKodu: erpKayit?.DepoKodu ?? string.Empty,
                     ErpMiktar: detay.Deger1 ?? 0,
                     FiiliMiktar: detay.Deger2 ?? 0,

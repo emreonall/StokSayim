@@ -164,6 +164,9 @@ public class SayimOturumuService : ISayimOturumuService
         var sonuc = await _uow.TurSonuclari.GetByTurIdAsync(turId, ct);
         if (sonuc == null) return null;
 
+        var kodlar = sonuc.Detaylar.Select(d => d.MalzemeKodu).Distinct().ToList();
+        var malzemeler = await _uow.Malzemeler.GetDictionaryByKodlarAsync(kodlar, ct);
+
         return new TurSonucuDto(
             Id: sonuc.Id,
             SayimTuruId: sonuc.SayimTuruId,
@@ -177,10 +180,10 @@ public class SayimOturumuService : ISayimOturumuService
             Detaylar: sonuc.Detaylar.Select(d => new TurSonucuDetayDto(
                 Id: d.Id,
                 MalzemeKodu: d.MalzemeKodu,
-                MalzemeAdi: d.MalzemeAdi,
+                MalzemeAdi: malzemeler.TryGetValue(d.MalzemeKodu, out var m) ? m.MalzemeAdi : d.MalzemeKodu,
                 LotNo: d.LotNo,
                 SeriNo: d.SeriNo,
-                Birim: d.Birim,
+                OlcuBirimi: malzemeler.TryGetValue(d.MalzemeKodu, out var mb) ? mb.OlcuBirimi : string.Empty,
                 Deger1: d.Deger1,
                 Deger2: d.Deger2,
                 Deger3: d.Deger3,
@@ -196,16 +199,22 @@ public class SayimOturumuService : ISayimOturumuService
 
     public async Task ManuelKararVerAsync(int turSonucuDetayId, ManuelKararDto request, string kullaniciId, CancellationToken ct = default)
     {
-        var detay = await _uow.TurSonuclari.Query()
-            .SelectMany(t => t.Detaylar)
-            .FirstOrDefaultAsync(d => d.Id == turSonucuDetayId, ct)
-            ?? throw new KeyNotFoundException($"TurSonucuDetay bulunamadı: {turSonucuDetayId}");
+        // TurSonucu + tüm detayları + oturum birlikte yükle
+        var turSonucu = await _uow.TurSonuclari.Query()
+            .Include(t => t.Detaylar)
+                .ThenInclude(d => d.ManuelKarar)
+            .Include(t => t.SayimTuru)
+                .ThenInclude(t => t.SayimOturumu)
+            .FirstOrDefaultAsync(t => t.Detaylar.Any(d => d.Id == turSonucuDetayId), ct)
+            ?? throw new KeyNotFoundException($"TurSonucu bulunamadı: {turSonucuDetayId}");
 
-        // ✅ FIX: karar oluşturulup detay'a atanıyor
+        var detay = turSonucu.Detaylar.First(d => d.Id == turSonucuDetayId);
+
+        // Karar kaydet
         var karar = new ManuelKarar
         {
             TurSonucuDetayId = turSonucuDetayId,
-            SayimTuruId = detay.TurSonucu.SayimTuruId,
+            SayimTuruId = turSonucu.SayimTuruId,
             MalzemeKodu = detay.MalzemeKodu,
             LotNo = detay.LotNo,
             KararVerilenDeger = request.KararVerilenDeger,
@@ -215,9 +224,41 @@ public class SayimOturumuService : ISayimOturumuService
             OlusturanKullaniciId = kullaniciId
         };
         detay.ManuelKarar = karar;
-
         detay.OnaylananDeger = request.KararVerilenDeger;
         detay.KararTipi = KararTipi.Manuel;
+        detay.Durum = TurSonucuDetayDurum.Eslesti;
+
+        // TurSonucu sayaçlarını güncelle
+        turSonucu.EslesilenSayisi = turSonucu.Detaylar.Count(d =>
+            d.Durum == TurSonucuDetayDurum.Eslesti || d.Id == turSonucuDetayId);
+        turSonucu.FarkliSayisi = turSonucu.Detaylar.Count(d =>
+            d.Durum == TurSonucuDetayDurum.FarkVar && d.Id != turSonucuDetayId);
+
+        // Tüm detaylar çözüldüyse turu ve oturumu kapat
+        bool tumDetaylarCozuldu = turSonucu.Detaylar
+            .All(d => d.Durum == TurSonucuDetayDurum.Eslesti || d.Id == turSonucuDetayId);
+
+        if (tumDetaylarCozuldu)
+        {
+            turSonucu.GenelDurum = SayimTuruDurum.Onaylandi;
+            turSonucu.SayimTuru.Durum = SayimTuruDurum.Onaylandi;
+
+            var oturum = turSonucu.SayimTuru.SayimOturumu;
+            oturum.Durum = SayimOturumuDurum.Onaylandi;
+
+            // Bu oturuma ait tüm bekleyen bildirimleri kapat
+            var bekleyenBildirimler = await _uow.GorevBildirimleri
+                .Query()
+                .Where(b => b.SayimOturumuId == oturum.Id
+                    && b.Durum == GorevBildirimDurum.Beklemede)
+                .ToListAsync(ct);
+            foreach (var b in bekleyenBildirimler)
+            {
+                b.Durum = GorevBildirimDurum.Islendi;
+                b.IslemTarihi = DateTime.UtcNow;
+                b.IsleyenKullaniciId = kullaniciId;
+            }
+        }
 
         await _uow.SaveChangesAsync(ct);
     }
@@ -377,7 +418,7 @@ public class SayimOturumuService : ISayimOturumuService
         var farkVar = false;
 
         var tumMalzemeler = tumDetaylar
-            .Select(d => new { d.MalzemeKodu, d.MalzemeAdi, d.LotNo, d.SeriNo, d.Birim })
+            .Select(d => new { d.MalzemeKodu, d.LotNo, d.SeriNo })
             .Distinct()
             .ToList();
 
@@ -402,10 +443,8 @@ public class SayimOturumuService : ISayimOturumuService
             sonucDetaylar.Add(new TurSonucuDetay
             {
                 MalzemeKodu = malzeme.MalzemeKodu,
-                MalzemeAdi = malzeme.MalzemeAdi ?? string.Empty,
                 LotNo = malzeme.LotNo,
                 SeriNo = malzeme.SeriNo,
-                Birim = malzeme.Birim ?? string.Empty,
                 Deger1 = deger1,
                 Deger2 = deger2,
                 Deger3 = null,
@@ -473,10 +512,8 @@ public class SayimOturumuService : ISayimOturumuService
             sonucDetaylar.Add(new TurSonucuDetay
             {
                 MalzemeKodu = fiiliDetay.MalzemeKodu,
-                MalzemeAdi = fiiliDetay.MalzemeAdi,
                 LotNo = fiiliDetay.LotNo,
                 SeriNo = fiiliDetay.SeriNo,
-                Birim = fiiliDetay.Birim,
                 Deger1 = erpMiktar,
                 Deger2 = fiiliMiktar,
                 Fark = fark,

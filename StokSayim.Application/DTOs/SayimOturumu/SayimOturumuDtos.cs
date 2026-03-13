@@ -75,10 +75,10 @@ public record ManuelKararDto(
 public record TurSonucuDetayDto(
     int Id,
     string MalzemeKodu,
-    string MalzemeAdi,
+    string MalzemeAdi,    // Malzeme tablosundan join
     string? LotNo,
     string? SeriNo,
-    string Birim,
+    string OlcuBirimi,    // Malzeme tablosundan join
     decimal? Deger1,
     decimal? Deger2,
     decimal? Deger3,

@@ -20,10 +20,8 @@ public class TurSonucuDetay : BaseEntity
 {
     public int TurSonucuId { get; set; }
     public string MalzemeKodu { get; set; } = string.Empty;
-    public string MalzemeAdi { get; set; } = string.Empty;
     public string? LotNo { get; set; }
     public string? SeriNo { get; set; }
-    public string Birim { get; set; } = string.Empty;
 
     // Karşılaştırılan değerler
     public decimal? Deger1 { get; set; }  // Birinci Ekip / ERP

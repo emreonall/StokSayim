@@ -33,10 +33,8 @@ public class ErpStok : BaseEntity
 {
     public int SayimPlaniId { get; set; }
     public string MalzemeKodu { get; set; } = string.Empty;
-    public string MalzemeAdi { get; set; } = string.Empty;
     public string DepoKodu { get; set; } = string.Empty;
     public decimal Miktar { get; set; }
-    public string Birim { get; set; } = string.Empty;
     public string? LotNo { get; set; }
     public string? SeriNo { get; set; }
     public DateTime ImportTarihi { get; set; } = DateTime.UtcNow;

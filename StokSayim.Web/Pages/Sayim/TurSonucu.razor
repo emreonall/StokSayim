@@ -3,6 +3,7 @@
 @inject ISayimOturumuHttpService OturumuService
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@using Syncfusion.Blazor.Grids
 
 <PageTitle>Tur Sonucu</PageTitle>
 
@@ -71,13 +72,19 @@ else
 
     <!-- Grid -->
     <div class="ss-card">
-        <SfGrid DataSource="@FiltrelenmisDetaylar" AllowPaging="true" AllowSorting="true">
+        <div style="display:flex; justify-content:flex-end; margin-bottom:12px">
+            <SfButton CssClass="e-outline" IconCss="e-icons e-export-excel" @onclick="ExcelExport">
+                Excel'e Aktar
+            </SfButton>
+        </div>
+        <SfGrid @ref="_grid" DataSource="@FiltrelenmisDetaylar" AllowPaging="true" AllowSorting="true" AllowExcelExport="true">
             <GridPageSettings PageSize="20" />
+            <GridEvents ExcelExportComplete="ExcelExportTamamlandi" TValue="TurSonucuDetayRow" />
             <GridColumns>
                 <GridColumn Field="MalzemeKodu" HeaderText="Malzeme Kodu" Width="130" />
                 <GridColumn Field="MalzemeAdi" HeaderText="Malzeme Adı" Width="200" />
                 <GridColumn Field="LotNo" HeaderText="Lot No" Width="100" />
-                <GridColumn Field="Birim" HeaderText="Birim" Width="70" TextAlign="TextAlign.Center" />
+                <GridColumn Field="OlcuBirimi" HeaderText="Birim" Width="70" TextAlign="TextAlign.Center" />
                 <GridColumn Field="Deger1" HeaderText="@_deger1Baslik" Width="110" Format="N2" TextAlign="TextAlign.Right" />
                 <GridColumn Field="Deger2" HeaderText="@_deger2Baslik" Width="110" Format="N2" TextAlign="TextAlign.Right" />
                 @if (_detaylar.Any(d => d.Deger3.HasValue))
@@ -198,6 +205,7 @@ else
 @code {
     [Parameter] public int TurId { get; set; }
 
+    private SfGrid<TurSonucuDetayRow> _grid = null!;
     private bool _yukleniyor = true;
     private TurSonucuDto? _turSonucu;
     private string _deger1Baslik = "Ekip 1";
@@ -216,7 +224,7 @@ else
     private bool _kararYukleniyor = false;
 
     record TurSonucuDetayRow(int Id, string MalzemeKodu, string MalzemeAdi, string? LotNo, string? SeriNo,
-        string Birim, decimal? Deger1, decimal? Deger2, decimal? Deger3, decimal? Fark, decimal? FarkYuzdesi,
+        string OlcuBirimi, decimal? Deger1, decimal? Deger2, decimal? Deger3, decimal? Fark, decimal? FarkYuzdesi,
         string Durum, decimal? OnaylananDeger, string? KararTipi);
 
     private IEnumerable<TurSonucuDetayRow> FiltrelenmisDetaylar => _filtre switch
@@ -252,7 +260,7 @@ else
                 }
                 _detaylar = sonuc.Detaylar.Select(d => new TurSonucuDetayRow(
                     d.Id, d.MalzemeKodu, d.MalzemeAdi, d.LotNo, d.SeriNo,
-                    d.Birim, d.Deger1, d.Deger2, d.Deger3, d.Fark, d.FarkYuzdesi,
+                    d.OlcuBirimi, d.Deger1, d.Deger2, d.Deger3, d.Fark, d.FarkYuzdesi,
                     d.Durum, d.OnaylananDeger, d.KararTipi
                 )).ToList();
             }
@@ -291,4 +299,16 @@ else
         catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
         finally { _kararYukleniyor = false; }
     }
+
+    private async Task ExcelExport()
+    {
+        var exportProps = new ExcelExportProperties
+        {
+            FileName = $"KarsilastirmaRaporu_Tur{_turSonucu?.TurNo}_{DateTime.Now:yyyyMMdd_HHmm}.xlsx",
+            ExportType = Syncfusion.Blazor.Grids.ExportType.AllPages
+        };
+        await _grid.ExportToExcelAsync(exportProps);
+    }
+
+    private void ExcelExportTamamlandi(object args) { }
 }

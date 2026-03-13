@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StokSayim.Application.DTOs.Auth;
+using StokSayim.Application.DTOs.Malzeme;
 using StokSayim.Application.DTOs.SayimKaydi;
 using StokSayim.Application.Interfaces.Services;
 
@@ -345,7 +346,12 @@ public class SayimOturumuController : ControllerBase
 public class SayimKaydiController : ControllerBase
 {
     private readonly ISayimKaydiService _service;
-    public SayimKaydiController(ISayimKaydiService service) => _service = service;
+    private readonly ISayimOturumuService _oturumuService;
+    public SayimKaydiController(ISayimKaydiService service, ISayimOturumuService oturumuService)
+    {
+        _service = service;
+        _oturumuService = oturumuService;
+    }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id, CancellationToken ct)
@@ -406,6 +412,29 @@ public class SayimKaydiController : ControllerBase
         await _service.TamamlaAsync(id, kullaniciId, ct);
         return NoContent();
     }
+
+    [HttpGet("plan/{planId}/acik-kayitlar")]
+    [Authorize(Roles = "Admin,SayimSorumlusu")]
+    public async Task<IActionResult> GetAcikKayitlar(int planId, CancellationToken ct)
+    {
+        var result = await _service.GetAcikKayitlarByPlanIdAsync(planId, ct);
+        return Ok(result);
+    }
+
+    [HttpPost("katilimci/{katilimciId}/offline-import")]
+    [Authorize(Roles = "Admin,SayimSorumlusu")]
+    public async Task<IActionResult> OfflineImport(int katilimciId, IFormFile dosya, [FromQuery] bool tamamla, CancellationToken ct)
+    {
+        if (dosya == null || dosya.Length == 0) return BadRequest("Dosya seçilmedi.");
+        var kullaniciId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+        using var stream = dosya.OpenReadStream();
+        var result = await _service.OfflineImportAsync(katilimciId, stream, dosya.FileName, kullaniciId, tamamla, ct);
+
+        if (result.KarsilastirmaTetiklendi)
+            await _oturumuService.HesaplaKarsilastirmaAsync(result.TurId, ct);
+
+        return Ok(result);
+    }
 }
 
 [ApiController]
@@ -430,5 +459,36 @@ public class RaporController : ControllerBase
         var bytes = await _service.ExportKesinFarkRaporuExcelAsync(planId, ct);
         return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             $"KesinFarkRaporu_{planId}_{DateTime.Now:yyyyMMdd}.xlsx");
+    }
+
+}
+[ApiController]
+[Route("api/malzeme")]
+[Authorize]
+public class MalzemeController : ControllerBase
+{
+    private readonly IMalzemeService _service;
+    public MalzemeController(IMalzemeService service) => _service = service;
+
+    [HttpGet("{kod}")]
+    public async Task<IActionResult> GetByKod(string kod, CancellationToken ct)
+    {
+        var m = await _service.GetByKodAsync(kod, ct);
+        return m == null ? NotFound() : Ok(m);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll(CancellationToken ct) =>
+        Ok(await _service.GetAllAsync(ct));
+
+    [HttpPost("import")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Import(IFormFile dosya, CancellationToken ct)
+    {
+        if (dosya == null || dosya.Length == 0)
+            return BadRequest("Dosya boş.");
+        using var stream = dosya.OpenReadStream();
+        var sonuc = await _service.ImportAsync(stream, dosya.FileName, ct);
+        return Ok(sonuc);
     }
 }

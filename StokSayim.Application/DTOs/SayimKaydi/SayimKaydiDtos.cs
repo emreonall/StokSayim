@@ -20,23 +20,42 @@ public record SayimKaydiDto(
 public record SayimKaydiDetayDto(
     int Id,
     string MalzemeKodu,
-    string MalzemeAdi,
+    string MalzemeAdi,   // Malzeme tablosundan join
     string? LotNo,
     string? SeriNo,
     decimal SayilanMiktar,
-    string Birim,
+    string OlcuBirimi,   // Malzeme tablosundan join
     string? Notlar
 );
 
 public record SayimKaydiDetayEkleDto(
     string MalzemeKodu,
-    string MalzemeAdi,
     string? LotNo,
     string? SeriNo,
     decimal SayilanMiktar,
-    string Birim,
     string? Notlar
 );
+public record AcikSayimKaydiDto(
+    int KatilimciId,   // SayimTuruKatilimci.Id — import için anahtar
+    int EkipId,
+    int SayimTuruId,
+    string EkipAdi,
+    string EkipRoluAdi,
+    string BolgeAdi,
+    int TurNo,
+    string KullaniciAdlari  // Ekipteki kişiler
+);
+
+public record OfflineImportSonucDto(
+    bool Basarili,
+    int KaydiId,
+    int TurId,
+    int EklenenSatir,
+    int HataliSatir,
+    List<string> Hatalar,
+    bool KarsilastirmaTetiklendi
+);
+
 public record TopluDetayEkleSonucDto(
     int KaydiId,
     int EklenenSatir,

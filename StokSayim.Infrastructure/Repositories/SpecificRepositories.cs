@@ -227,3 +227,25 @@ public class GorevBildirimiRepository : Repository<GorevBildirimi>, IGorevBildir
             .Where(x => x.SayimOturumuId == oturumuId)
             .ToListAsync(ct);
 }
+public class MalzemeRepository : IMalzemeRepository
+{
+    private readonly AppDbContext _context;
+    public MalzemeRepository(AppDbContext context) => _context = context;
+
+    public async Task<Malzeme?> GetByKodAsync(string malzemeKodu, CancellationToken ct = default)
+        => await _context.Malzemeler.FirstOrDefaultAsync(m => m.MalzemeKodu == malzemeKodu, ct);
+
+    public async Task<Dictionary<string, Malzeme>> GetDictionaryByKodlarAsync(IEnumerable<string> kodlar, CancellationToken ct = default)
+        => await _context.Malzemeler
+            .Where(m => kodlar.Contains(m.MalzemeKodu))
+            .ToDictionaryAsync(m => m.MalzemeKodu, ct);
+
+    public async Task<IEnumerable<Malzeme>> GetAllAsync(CancellationToken ct = default)
+        => await _context.Malzemeler.OrderBy(m => m.MalzemeKodu).ToListAsync(ct);
+
+    public async Task AddAsync(Malzeme malzeme, CancellationToken ct = default)
+        => await _context.Malzemeler.AddAsync(malzeme, ct);
+
+    public async Task AddRangeAsync(IEnumerable<Malzeme> malzemeler, CancellationToken ct = default)
+        => await _context.Malzemeler.AddRangeAsync(malzemeler, ct);
+}

@@ -1,4 +1,6 @@
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Components.Forms;
+using StokSayim.Application.DTOs.Malzeme;
 using StokSayim.Application.DTOs.Auth;
 using StokSayim.Application.DTOs.Bolge;
 using StokSayim.Application.DTOs.Ekip;
@@ -66,6 +68,8 @@ public interface ISayimKaydiHttpService
     Task<SayimKaydiDto?> AcAsync(int turId, int ekipId);
     Task DetayEkleAsync(int kaydiId, SayimKaydiDetayEkleDto request);
     Task<TopluDetayEkleSonucDto?> TopluDetayEkleAsync(int kaydiId, IEnumerable<SayimKaydiDetayEkleDto> detaylar);
+    Task<IEnumerable<AcikSayimKaydiDto>> GetAcikKayitlarAsync(int planId);
+    Task<OfflineImportSonucDto?> OfflineImportAsync(int katilimciId, IBrowserFile dosya, bool tamamla = false);
     Task DetayGuncelleAsync(int detayId, SayimKaydiDetayEkleDto request);
     Task DetaySilAsync(int detayId);
     Task TamamlaAsync(int kaydiId);
@@ -292,6 +296,18 @@ public class SayimKaydiHttpService : ISayimKaydiHttpService
             throw new InvalidOperationException(string.IsNullOrWhiteSpace(msg) ? $"Hata: {(int)r.StatusCode}" : msg);
         }
     }
+
+    public async Task<IEnumerable<AcikSayimKaydiDto>> GetAcikKayitlarAsync(int planId)
+        => await _http.GetFromJsonAsync<IEnumerable<AcikSayimKaydiDto>>($"api/sayimkaydi/plan/{planId}/acik-kayitlar") ?? [];
+
+    public async Task<OfflineImportSonucDto?> OfflineImportAsync(int katilimciId, IBrowserFile dosya, bool tamamla = false)
+    {
+        using var formContent = new MultipartFormDataContent();
+        using var stream = dosya.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+        formContent.Add(new StreamContent(stream), "dosya", dosya.Name);
+        var r = await _http.PostAsync($"api/sayimkaydi/katilimci/{katilimciId}/offline-import?tamamla={tamamla}", formContent);
+        return r.IsSuccessStatusCode ? await r.Content.ReadFromJsonAsync<OfflineImportSonucDto>() : null;
+    }
 }
 
 public class RaporHttpService : IRaporHttpService
@@ -331,4 +347,24 @@ public class KullaniciHttpService : IKullaniciHttpService
 
     public async Task SetAktifAsync(string id, bool aktif)
         => await _http.PatchAsync($"api/kullanici/{id}/aktif?aktif={aktif}", null);
+}
+public class MalzemeHttpService
+{
+    private readonly HttpClient _http;
+    public MalzemeHttpService(HttpClient http) => _http = http;
+
+    public async Task<MalzemeOzetDto?> GetByKodAsync(string kod)
+        => await _http.GetFromJsonAsync<MalzemeOzetDto>($"api/malzeme/{Uri.EscapeDataString(kod)}");
+
+    public async Task<IEnumerable<MalzemeDto>> GetAllAsync()
+        => await _http.GetFromJsonAsync<IEnumerable<MalzemeDto>>("api/malzeme") ?? [];
+
+    public async Task<MalzemeImportDto?> ImportAsync(IBrowserFile dosya)
+    {
+        using var content = new MultipartFormDataContent();
+        using var stream = dosya.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+        content.Add(new StreamContent(stream), "dosya", dosya.Name);
+        var r = await _http.PostAsync("api/malzeme/import", content);
+        return r.IsSuccessStatusCode ? await r.Content.ReadFromJsonAsync<MalzemeImportDto>() : null;
+    }
 }

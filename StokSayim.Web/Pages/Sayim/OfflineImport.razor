@@ -1,0 +1,227 @@
+@page "/offline-import"
+@attribute [Authorize(Roles = "Admin,SayimSorumlusu")]
+@inject ISayimPlaniHttpService PlanService
+@inject ISayimKaydiHttpService KaydiService
+
+<PageTitle>Offline Veri Aktarımı</PageTitle>
+
+<div class="ss-page-header">
+    <div>
+        <h1 class="ss-page-title">📥 Offline Veri Aktarımı</h1>
+        <p class="ss-page-subtitle">Bağlantı sorunu yaşayan ekibin verilerini içeri aktar</p>
+    </div>
+    <a href="templates/StokSayim_Import_Sablonlari.xlsx" download
+       style="font-size:12px; color:var(--primary); text-decoration:none; padding:6px 12px; border:1px solid var(--primary); border-radius:6px">
+        📥 Şablon İndir
+    </a>
+</div>
+
+@if (!string.IsNullOrEmpty(_mesaj))
+{
+    <div class="ss-alert @(_hata ? "ss-alert-danger" : "ss-alert-success")">@_mesaj</div>
+}
+
+<div class="ss-card">
+    <div class="ss-card-title">1 — Aktif Sayım Planını Seç</div>
+    @if (_planlarYukleniyor)
+    {
+        <div class="ss-loading"><SfSpinner Visible="true" /> Planlar yükleniyor...</div>
+    }
+    else
+    {
+        <SfDropDownList TValue="int?" TItem="SayimPlaniListDto"
+                        @bind-Value="_seciliPlanId"
+                        DataSource="@_aktifPlanlar"
+                        Placeholder="Plan seçin..."
+                        CssClass="e-small">
+            <DropDownListFieldSettings Value="Id" Text="PlanAdi" />
+            <DropDownListEvents TValue="int?" TItem="SayimPlaniListDto"
+                                ValueChange="PlanSecildi" />
+        </SfDropDownList>
+    }
+</div>
+
+@if (_seciliPlanId.HasValue)
+{
+    <div class="ss-card" style="margin-top:12px">
+        <div class="ss-card-title">2 — Ekip Üyesini Seç</div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px">
+            Cihazı getiren kişiyi listeden bulun. Liste, aktif turda sayım yapan kişileri gösterir.
+        </p>
+        @if (_kayitlarYukleniyor)
+        {
+            <div class="ss-loading"><SfSpinner Visible="true" /> Açık kayıtlar yükleniyor...</div>
+        }
+        else if (!_acikKayitlar.Any())
+        {
+            <div class="ss-alert ss-alert-warn">Bu planda aktif sayım kaydı bulunamadı.</div>
+        }
+        else
+        {
+            <div style="display:flex; flex-wrap:wrap; gap:10px">
+                @foreach (var kayit in _acikKayitlar)
+                {
+                    var secili = _seciliKatilimciId == kayit.KatilimciId;
+                    <div @onclick="() => KaydiSec(kayit)"
+                         style="padding:12px 16px; border-radius:8px; cursor:pointer; min-width:200px;
+                                border:2px solid @(secili ? "var(--primary)" : "var(--border)");
+                                background:@(secili ? "var(--primary-bg,#eff6ff)" : "var(--card-bg)")">
+                        <div style="font-weight:700; font-size:14px">@kayit.EkipAdi</div>
+                        <div style="font-size:12px; color:var(--muted); margin-top:2px">
+                            @kayit.EkipAdi · @kayit.EkipRoluAdi
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(kayit.KullaniciAdlari))
+                        {
+                            <div style="font-size:12px; color:var(--text); margin-top:2px">👤 @kayit.KullaniciAdlari</div>
+                        }
+                        <div style="font-size:12px; color:var(--muted)">
+                            📍 @kayit.BolgeAdi &nbsp;·&nbsp; Tur @kayit.TurNo
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@if (_seciliKatilimciId.HasValue)
+{
+    <div class="ss-card" style="margin-top:12px">
+        <div class="ss-card-title">3 — Excel Dosyasını Yükle</div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px">
+            Şablondaki <strong>OfflineKayit</strong> sheet'ini kullanın:
+            <code style="background:var(--code-bg,#f3f4f6); padding:2px 6px; border-radius:4px">
+                MalzemeKodu | Miktar | LotNo | SeriNo
+            </code>
+        </p>
+        <div style="display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap">
+            <div>
+                <InputFile OnChange="DosyaSec" accept=".xlsx,.xls" style="display:block; margin-bottom:6px" />
+                @if (_seciliDosya != null)
+                {
+                    <div style="font-size:11px; color:var(--muted)">📄 @_seciliDosya.Name</div>
+                }
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px">
+                    <input type="checkbox" @bind="_sayimiTamamla" style="width:16px; height:16px; cursor:pointer" />
+                    <span>Bu son parça — sayımı tamamla</span>
+                </label>
+                <SfButton CssClass="@(_sayimiTamamla ? "e-primary e-danger" : "e-primary")"
+                          Disabled="@(_seciliDosya == null || _importYukleniyor)"
+                          @onclick="ImportEt">
+                    @(_importYukleniyor ? "Aktarılıyor..." : _sayimiTamamla ? "▶ Aktar ve Tamamla" : "▶ Aktar")
+                </SfButton>
+            </div>
+        </div>
+
+        @if (_sonuc != null)
+        {
+            <div class="ss-alert @(_sonuc.HataliSatir == 0 ? "ss-alert-success" : "ss-alert-warn")" style="margin-top:12px">
+                <div style="font-weight:600; margin-bottom:4px">
+                    ✅ @_sonuc.EklenenSatir satır aktarıldı
+                    @if (_sonuc.HataliSatir > 0)
+                    {
+                        <span> &nbsp;·&nbsp; ⚠️ @_sonuc.HataliSatir hatalı satır</span>
+                    }
+                </div>
+                @if (_sonuc.Hatalar.Any())
+                {
+                    <details>
+                        <summary style="cursor:pointer; font-size:12px">Hata detayları</summary>
+                        <div style="margin-top:6px; max-height:120px; overflow-y:auto">
+                            @foreach (var hata in _sonuc.Hatalar)
+                            {
+                                <div style="font-size:12px; color:var(--danger)">• @hata</div>
+                            }
+                        </div>
+                    </details>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<SayimPlaniListDto> _aktifPlanlar = new();
+    private List<AcikSayimKaydiDto> _acikKayitlar = new();
+    private bool _planlarYukleniyor = true;
+    private bool _kayitlarYukleniyor = false;
+    private bool _importYukleniyor = false;
+    private bool _hata = false;
+    private string _mesaj = "";
+    private int? _seciliPlanId;
+    private int? _seciliKatilimciId;
+    private IBrowserFile? _seciliDosya;
+    private bool _sayimiTamamla = false;
+    private OfflineImportSonucDto? _sonuc;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var planlar = await PlanService.GetAllAsync();
+            _aktifPlanlar = planlar
+                .Where(p => p.Durum == SayimPlaniDurum.Aktif
+                         || p.Durum == SayimPlaniDurum.SayimTamamlandi
+                         || p.Durum == SayimPlaniDurum.ErpKarsilastirmaAktif)
+                .ToList();
+        }
+        catch (Exception ex) { _hata = true; _mesaj = $"Plan listesi yüklenemedi: {ex.Message}"; }
+        finally { _planlarYukleniyor = false; }
+    }
+
+    private async Task PlanSecildi(ChangeEventArgs<int?, SayimPlaniListDto> e)
+    {
+        _seciliPlanId = e.Value;
+        _seciliKatilimciId = null;
+        _acikKayitlar.Clear();
+        _sonuc = null;
+        _seciliDosya = null;
+        if (!_seciliPlanId.HasValue) return;
+
+        _kayitlarYukleniyor = true;
+        try
+        {
+            var kayitlar = await KaydiService.GetAcikKayitlarAsync(_seciliPlanId.Value);
+            _acikKayitlar = kayitlar.ToList();
+        }
+        catch (Exception ex) { _hata = true; _mesaj = $"Kayıtlar yüklenemedi: {ex.Message}"; }
+        finally { _kayitlarYukleniyor = false; }
+    }
+
+    private void KaydiSec(AcikSayimKaydiDto kayit)
+    {
+        _seciliKatilimciId = kayit.KatilimciId;
+        _sonuc = null;
+        _seciliDosya = null;
+    }
+
+    private void DosyaSec(InputFileChangeEventArgs e)
+    {
+        _seciliDosya = e.File;
+        _sonuc = null;
+        _sayimiTamamla = false;
+    }
+
+    private async Task ImportEt()
+    {
+        if (_seciliDosya == null || !_seciliKatilimciId.HasValue) return;
+        _importYukleniyor = true;
+        _sonuc = null;
+        _mesaj = "";
+        try
+        {
+            _sonuc = await KaydiService.OfflineImportAsync(_seciliKatilimciId.Value, _seciliDosya, _sayimiTamamla);
+            if (_sonuc != null)
+            {
+                _hata = false;
+                _mesaj = _sonuc.EklenenSatir > 0
+                    ? $"Aktarım tamamlandı. {_sonuc.EklenenSatir} satır eklendi."
+                    : "Aktarım tamamlandı fakat eklenecek satır bulunamadı.";
+            }
+        }
+        catch (Exception ex) { _hata = true; _mesaj = $"Aktarım hatası: {ex.Message}"; }
+        finally { _importYukleniyor = false; }
+    }
+}

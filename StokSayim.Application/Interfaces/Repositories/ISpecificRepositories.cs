@@ -71,3 +71,11 @@ public interface IGorevBildirimiRepository : IRepository<GorevBildirimi>
     Task<IEnumerable<GorevBildirimi>> GetBekleyenlerByOturumAsync(int oturumuId, GorevBildirimTipi tip, CancellationToken ct = default);
     Task<IEnumerable<GorevBildirimi>> GetByOturumuIdAsync(int oturumuId, CancellationToken ct = default);
 }
+public interface IMalzemeRepository
+{
+    Task<Malzeme?> GetByKodAsync(string malzemeKodu, CancellationToken ct = default);
+    Task<Dictionary<string, Malzeme>> GetDictionaryByKodlarAsync(IEnumerable<string> kodlar, CancellationToken ct = default);
+    Task<IEnumerable<Malzeme>> GetAllAsync(CancellationToken ct = default);
+    Task AddAsync(Malzeme malzeme, CancellationToken ct = default);
+    Task AddRangeAsync(IEnumerable<Malzeme> malzemeler, CancellationToken ct = default);
+}

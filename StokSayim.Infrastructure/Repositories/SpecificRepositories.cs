@@ -103,6 +103,9 @@ public class SayimOturumuRepository : Repository<SayimOturumu>, ISayimOturumuRep
     public async Task<IEnumerable<SayimOturumu>> GetByPlanIdAsync(int planId, CancellationToken ct = default)
         => await _context.SayimOturumlari
             .Include(x => x.Bolge)
+            .Include(x => x.SayimTurlari)
+                .ThenInclude(t => t.TurSonucu)
+                    .ThenInclude(s => s!.Detaylar)
             .Where(x => x.SayimPlaniId == planId)
             .ToListAsync(ct);
 }

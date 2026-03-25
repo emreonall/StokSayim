@@ -27,6 +27,7 @@ public interface ISayimPlaniHttpService
     Task<SayimPlaniDetayDto?> CreateAsync(SayimPlaniOlusturDto request);
     Task UpdateAsync(int id, SayimPlaniGuncelleDto request);
     Task AktifEtAsync(int id);
+    Task SayimiTamamlaAsync(int id);
     Task<ErpImportSonucDto?> ImportErpAsync(int id, MultipartFormDataContent form);
 }
 
@@ -140,6 +141,9 @@ public class SayimPlaniHttpService : ISayimPlaniHttpService
 
     public async Task AktifEtAsync(int id)
         => await _http.PostAsync($"api/sayimplani/{id}/aktif-et", null);
+
+    public async Task SayimiTamamlaAsync(int id)
+        => await _http.PostAsync($"api/sayimplani/{id}/sayimi-tamamla", null);
 
     public async Task<ErpImportSonucDto?> ImportErpAsync(int id, MultipartFormDataContent form)
     {

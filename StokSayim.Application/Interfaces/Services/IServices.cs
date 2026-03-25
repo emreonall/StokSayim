@@ -45,6 +45,7 @@ public interface ISayimPlaniService
     Task<SayimPlaniDetayDto> CreateAsync(SayimPlaniOlusturDto request, string kullaniciId, CancellationToken ct = default);
     Task UpdateAsync(int id, SayimPlaniGuncelleDto request, CancellationToken ct = default);
     Task AktifEtAsync(int id, string kullaniciId, CancellationToken ct = default);
+    Task SayimiTamamlaAsync(int id, string kullaniciId, CancellationToken ct = default);
     Task<ErpImportSonucDto> ImportErpStokAsync(int id, Stream dosya, string dosyaAdi, string kullaniciId, CancellationToken ct = default);
 }
 

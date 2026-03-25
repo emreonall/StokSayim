@@ -191,6 +191,15 @@ public class SayimPlaniController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("{id}/sayimi-tamamla")]
+    [Authorize(Roles = "Admin,SayimSorumlusu")]
+    public async Task<IActionResult> SayimiTamamla(int id, CancellationToken ct)
+    {
+        var kullaniciId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value;
+        await _service.SayimiTamamlaAsync(id, kullaniciId, ct);
+        return NoContent();
+    }
+
     [HttpPost("{id}/erp-import")]
     [Authorize(Roles = "Admin,SayimSorumlusu")]
     public async Task<IActionResult> ErpImport(int id, IFormFile dosya, CancellationToken ct)

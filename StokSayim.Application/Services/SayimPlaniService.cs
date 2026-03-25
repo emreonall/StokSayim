@@ -109,6 +109,32 @@ public class SayimPlaniService : ISayimPlaniService
         await _uow.SaveChangesAsync(ct);
     }
 
+    public async Task SayimiTamamlaAsync(int id, string kullaniciId, CancellationToken ct = default)
+    {
+        var plan = await _uow.SayimPlanlari.GetByIdAsync(id, ct)
+            ?? throw new KeyNotFoundException($"Plan bulunamadı: {id}");
+
+        if (plan.Durum != SayimPlaniDurum.Aktif)
+            throw new InvalidOperationException("Sadece Aktif durumdaki plan tamamlanabilir.");
+
+        var oturumlar = await _uow.SayimOturumlari.GetByPlanIdAsync(id, ct);
+
+        if (!oturumlar.Any())
+            throw new InvalidOperationException("Henüz hiçbir bölge sayımı başlatılmamış.");
+
+        var tamamlanmamislar = oturumlar.Where(o =>
+            o.Durum != SayimOturumuDurum.Onaylandi &&
+            o.Durum != SayimOturumuDurum.ManuelKarar).ToList();
+
+        if (tamamlanmamislar.Any())
+            throw new InvalidOperationException(
+                $"{tamamlanmamislar.Count} bölgenin sayımı henüz tamamlanmamış veya onaylanmamış.");
+
+        plan.Durum = SayimPlaniDurum.SayimTamamlandi;
+        _uow.SayimPlanlari.Update(plan);
+        await _uow.SaveChangesAsync(ct);
+    }
+
     public async Task<ErpImportSonucDto> ImportErpStokAsync(int id, Stream dosya, string dosyaAdi, string kullaniciId, CancellationToken ct = default)
     {
         var plan = await _uow.SayimPlanlari.GetWithDetailsAsync(id, ct)

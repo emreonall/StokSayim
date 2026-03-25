@@ -44,6 +44,14 @@ else
                     </SfButton>
                 </AuthorizeView>
             }
+            @if (_plan.Durum == SayimPlaniDurum.Aktif)
+            {
+                <AuthorizeView Roles="Admin,SayimSorumlusu">
+                    <SfButton CssClass="e-success" @onclick="SayimiTamamla">
+                        ✅ Sayımı Tamamla
+                    </SfButton>
+                </AuthorizeView>
+            }
             @if (_plan.Durum == SayimPlaniDurum.SayimTamamlandi)
             {
                 <AuthorizeView Roles="Admin,SayimSorumlusu">
@@ -358,6 +366,17 @@ else
         {
             await PlanService.AktifEtAsync(Id);
             _mesaj = "Plan aktif edildi."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+    }
+
+    private async Task SayimiTamamla()
+    {
+        try
+        {
+            await PlanService.SayimiTamamlaAsync(Id);
+            _mesaj = "Sayım tamamlandı. Artık ERP karşılaştırması başlatılabilir."; _hata = false;
             await Yukle();
         }
         catch (Exception ex) { _mesaj = ex.Message; _hata = true; }

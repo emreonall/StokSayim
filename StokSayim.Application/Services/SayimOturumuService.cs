@@ -275,6 +275,9 @@ public class SayimOturumuService : ISayimOturumuService
 
         var erpStoklar = await _uow.ErpStoklar.GetByPlanIdAsync(planId, ct);
 
+        var plan = await _uow.SayimPlanlari.GetByIdAsync(planId, ct)
+            ?? throw new KeyNotFoundException($"Plan bulunamadı: {planId}");
+
         await _uow.BeginTransactionAsync(ct);
         try
         {
@@ -290,6 +293,9 @@ public class SayimOturumuService : ISayimOturumuService
                 // ERP karşılaştırma sonucunu hesapla
                 await HesaplaErpKarsilastirmaAsync(erpTur, sonSonuc, erpStoklar, oturum, kullaniciId, ct);
             }
+
+            plan.Durum = SayimPlaniDurum.ErpKarsilastirmaAktif;
+            _uow.SayimPlanlari.Update(plan);
 
             await _uow.SaveChangesAsync(ct);
             await _uow.CommitTransactionAsync(ct);
@@ -498,11 +504,13 @@ public class SayimOturumuService : ISayimOturumuService
 
         foreach (var fiiliDetay in onaylananlar)
         {
-            var erpKayit = erpStoklar.FirstOrDefault(e =>
-                e.MalzemeKodu == fiiliDetay.MalzemeKodu &&
-                (e.LotNo == fiiliDetay.LotNo || (string.IsNullOrEmpty(e.LotNo) && string.IsNullOrEmpty(fiiliDetay.LotNo))));
-
-            var erpMiktar = erpKayit?.Miktar ?? 0;
+            // ERP'de aynı malzeme kodu + lot no kombinasyonu birden fazla depoda olabilir.
+            // Bölge veya depo koduna bakmaksızın sadece malzeme kodu + lot no bazında toplam alıyoruz.
+            var erpMiktar = erpStoklar
+                .Where(e =>
+                    e.MalzemeKodu == fiiliDetay.MalzemeKodu &&
+                    (e.LotNo == fiiliDetay.LotNo || (string.IsNullOrEmpty(e.LotNo) && string.IsNullOrEmpty(fiiliDetay.LotNo))))
+                .Sum(e => e.Miktar);
             var fiiliMiktar = fiiliDetay.OnaylananDeger!.Value;
             var fark = fiiliMiktar - erpMiktar;
 

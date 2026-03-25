@@ -718,7 +718,12 @@ public class RaporService : IRaporService
 
             foreach (var detay in erpTuru.TurSonucu.Detaylar.Where(d => d.Durum == TurSonucuDetayDurum.FarkVar))
             {
-                var erpKayit = erpStoklar.FirstOrDefault(e => e.MalzemeKodu == detay.MalzemeKodu && e.LotNo == detay.LotNo);
+                var erpDepoKodlari = erpStoklar
+                    .Where(e => e.MalzemeKodu == detay.MalzemeKodu &&
+                                (e.LotNo == detay.LotNo || (string.IsNullOrEmpty(e.LotNo) && string.IsNullOrEmpty(detay.LotNo))))
+                    .Select(e => e.DepoKodu)
+                    .Distinct()
+                    .ToList();
                 malzemeSozlugu.TryGetValue(detay.MalzemeKodu, out var malzeme);
 
                 farkDetaylari.Add(new FarkDetayDto(
@@ -727,7 +732,7 @@ public class RaporService : IRaporService
                     LotNo: detay.LotNo,
                     SeriNo: detay.SeriNo,
                     Birim: malzeme?.OlcuBirimi ?? string.Empty,
-                    DepoKodu: erpKayit?.DepoKodu ?? string.Empty,
+                    DepoKodu: string.Join(", ", erpDepoKodlari),
                     ErpMiktar: detay.Deger1 ?? 0,
                     FiiliMiktar: detay.Deger2 ?? 0,
                     Fark: detay.Fark ?? 0,

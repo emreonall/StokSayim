@@ -462,14 +462,6 @@ public class RaporController : ControllerBase
     public async Task<IActionResult> GetKesinFarkRaporu(int planId, CancellationToken ct) =>
         Ok(await _service.GetKesinFarkRaporuAsync(planId, ct));
 
-    [HttpGet("plan/{planId}/kesin-fark/excel")]
-    public async Task<IActionResult> ExportKesinFarkExcel(int planId, CancellationToken ct)
-    {
-        var bytes = await _service.ExportKesinFarkRaporuExcelAsync(planId, ct);
-        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            $"KesinFarkRaporu_{planId}_{DateTime.Now:yyyyMMdd}.xlsx");
-    }
-
 }
 [ApiController]
 [Route("api/malzeme")]

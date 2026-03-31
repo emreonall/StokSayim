@@ -80,7 +80,6 @@ public interface IRaporHttpService
 {
     Task<SayimDurumRaporDto?> GetDurumRaporuAsync(int planId);
     Task<KesinFarkRaporDto?> GetKesinFarkRaporuAsync(int planId);
-    Task<byte[]?> ExportExcelAsync(int planId);
 }
 
 public interface IKullaniciHttpService
@@ -324,12 +323,6 @@ public class RaporHttpService : IRaporHttpService
 
     public async Task<KesinFarkRaporDto?> GetKesinFarkRaporuAsync(int planId)
         => await _http.GetFromJsonAsync<KesinFarkRaporDto>($"api/rapor/plan/{planId}/kesin-fark");
-
-    public async Task<byte[]?> ExportExcelAsync(int planId)
-    {
-        var r = await _http.GetAsync($"api/rapor/plan/{planId}/kesin-fark/excel");
-        return r.IsSuccessStatusCode ? await r.Content.ReadAsByteArrayAsync() : null;
-    }
 }
 
 public class KullaniciHttpService : IKullaniciHttpService

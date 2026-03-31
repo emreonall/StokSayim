@@ -697,15 +697,9 @@ public class RaporService : IRaporService
         var oturumlar = (await _uow.SayimOturumlari.GetByPlanIdAsync(planId, ct)).ToList();
         var erpStoklar = (await _uow.ErpStoklar.GetByPlanIdAsync(planId, ct)).ToList();
 
-        // Malzeme kodlarını önceden yükle
-        var tumKodlar = oturumlar
-            .SelectMany(o => o.SayimTurlari)
-            .Where(t => t.TurSonucu != null)
-            .SelectMany(t => t.TurSonucu!.Detaylar)
-            .Select(d => d.MalzemeKodu).Distinct().ToList();
-        var malzemeSozlugu = await _uow.Malzemeler.GetDictionaryByKodlarAsync(tumKodlar);
-
-        var farkDetaylari = new List<FarkDetayDto>();
+        // --- SAYIM SONUÇLARINI topla: sadece malzeme kodu bazında ---
+        // key: MalzemeKodu → (FiiliMiktar, BolgeAdi, KararTipi, Gerekce)
+        var sayimSonuclari = new Dictionary<string, (decimal Miktar, string BolgeAdi, KararTipi? Karar, string? Gerekce)>();
 
         foreach (var oturum in oturumlar)
         {
@@ -716,33 +710,84 @@ public class RaporService : IRaporService
 
             if (erpTuru?.TurSonucu == null) continue;
 
-            foreach (var detay in erpTuru.TurSonucu.Detaylar.Where(d => d.Durum == TurSonucuDetayDurum.FarkVar))
+            foreach (var detay in erpTuru.TurSonucu.Detaylar)
             {
-                var erpDepoKodlari = erpStoklar
-                    .Where(e => e.MalzemeKodu == detay.MalzemeKodu &&
-                                (e.LotNo == detay.LotNo || (string.IsNullOrEmpty(e.LotNo) && string.IsNullOrEmpty(detay.LotNo))))
-                    .Select(e => e.DepoKodu)
-                    .Distinct()
-                    .ToList();
-                malzemeSozlugu.TryGetValue(detay.MalzemeKodu, out var malzeme);
-
-                farkDetaylari.Add(new FarkDetayDto(
-                    MalzemeKodu: detay.MalzemeKodu,
-                    MalzemeAdi: malzeme?.MalzemeAdi ?? detay.MalzemeKodu,
-                    LotNo: detay.LotNo,
-                    SeriNo: detay.SeriNo,
-                    Birim: malzeme?.OlcuBirimi ?? string.Empty,
-                    DepoKodu: string.Join(", ", erpDepoKodlari),
-                    ErpMiktar: detay.Deger1 ?? 0,
-                    FiiliMiktar: detay.Deger2 ?? 0,
-                    Fark: detay.Fark ?? 0,
-                    FarkYuzdesi: detay.FarkYuzdesi ?? 0,
-                    KararTipi: detay.KararTipi,
-                    ManuelKararGerekce: detay.ManuelKarar?.Gerekce,
-                    BolgeAdi: oturum.Bolge?.BolgeAdi ?? string.Empty
-                ));
+                var fiili = detay.Deger2 ?? 0;
+                if (sayimSonuclari.TryGetValue(detay.MalzemeKodu, out var mevcut))
+                    sayimSonuclari[detay.MalzemeKodu] = (mevcut.Miktar + fiili, mevcut.BolgeAdi, detay.KararTipi, detay.ManuelKarar?.Gerekce);
+                else
+                    sayimSonuclari[detay.MalzemeKodu] = (fiili, oturum.Bolge?.BolgeAdi ?? string.Empty, detay.KararTipi, detay.ManuelKarar?.Gerekce);
             }
         }
+
+        // --- ERP STOKLARI topla: sadece malzeme kodu bazında ---
+        // key: MalzemeKodu → ToplamMiktar
+        var erpOzet = erpStoklar
+            .GroupBy(e => e.MalzemeKodu)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Sum(e => e.Miktar)
+            );
+
+        // --- Malzeme bilgileri ---
+        var tumKodlar = erpOzet.Keys
+            .Union(sayimSonuclari.Keys)
+            .Distinct().ToList();
+        var malzemeSozlugu = await _uow.Malzemeler.GetDictionaryByKodlarAsync(tumKodlar);
+
+        var satirlar = new List<FarkDetayDto>();
+
+        // --- 1. ERP'deki tüm malzemeleri işle ---
+        foreach (var kvp in erpOzet)
+        {
+            var malzemeKodu = kvp.Key;
+            var erpMiktar = kvp.Value;
+
+            sayimSonuclari.TryGetValue(malzemeKodu, out var sayim);
+            var fiiliMiktar = sayim.Miktar;
+            var fark = fiiliMiktar - erpMiktar;
+            var farkYuzdesi = erpMiktar != 0 ? Math.Abs(fark / erpMiktar * 100) : (fiiliMiktar != 0 ? 100m : 0m);
+
+            malzemeSozlugu.TryGetValue(malzemeKodu, out var malzeme);
+
+            satirlar.Add(new FarkDetayDto(
+                MalzemeKodu: malzemeKodu,
+                MalzemeAdi: malzeme?.MalzemeAdi ?? malzemeKodu,
+                Birim: malzeme?.OlcuBirimi ?? string.Empty,
+                ErpMiktar: erpMiktar,
+                FiiliMiktar: fiiliMiktar,
+                Fark: fark,
+                FarkYuzdesi: Math.Round(farkYuzdesi, 2),
+                KararTipi: sayim.Karar,
+                ManuelKararGerekce: sayim.Gerekce
+            ));
+        }
+
+        // --- 2. Sadece sayımda olan malzemeleri ekle (ERP'de yok) ---
+        foreach (var kvp in sayimSonuclari)
+        {
+            var malzemeKodu = kvp.Key;
+            if (erpOzet.ContainsKey(malzemeKodu)) continue;
+
+            var fiiliMiktar = kvp.Value.Miktar;
+            malzemeSozlugu.TryGetValue(malzemeKodu, out var malzeme);
+
+            satirlar.Add(new FarkDetayDto(
+                MalzemeKodu: malzemeKodu,
+                MalzemeAdi: malzeme?.MalzemeAdi ?? malzemeKodu,
+                Birim: malzeme?.OlcuBirimi ?? string.Empty,
+                ErpMiktar: 0,
+                FiiliMiktar: fiiliMiktar,
+                Fark: fiiliMiktar,
+                FarkYuzdesi: 100,
+                KararTipi: kvp.Value.Karar,
+                ManuelKararGerekce: kvp.Value.Gerekce
+            ));
+        }
+
+        var siraliSatirlar = satirlar.OrderBy(s => s.MalzemeKodu).ToList();
+        var farksiz = siraliSatirlar.Count(s => s.Fark == 0);
+        var farkli = siraliSatirlar.Count(s => s.Fark != 0);
 
         var durumRaporu = await GetSayimDurumRaporuAsync(planId, ct);
 
@@ -750,78 +795,15 @@ public class RaporService : IRaporService
             PlanId: planId,
             PlanAdi: plan.PlanAdi,
             RaporTarihi: DateTime.UtcNow,
-            ToplamMalzeme: erpStoklar.Count,
-            FarksizMalzeme: erpStoklar.Count - farkDetaylari.Count,
-            FarkliMalzeme: farkDetaylari.Count,
+            ToplamSatir: siraliSatirlar.Count,
+            FarksizSatir: farksiz,
+            FarkliSatir: farkli,
             BolgeDurumlari: durumRaporu.BolgeDurumlari,
             EkipSayimOzetleri: durumRaporu.EkipSayimOzetleri,
-            FarkDetaylari: farkDetaylari
+            FarkDetaylari: siraliSatirlar
         );
     }
 
-    public async Task<byte[]> ExportKesinFarkRaporuExcelAsync(int planId, CancellationToken ct = default)
-    {
-        var rapor = await GetKesinFarkRaporuAsync(planId, ct);
-
-        using var wb = new XLWorkbook();
-
-        var wsOzet = wb.Worksheets.Add("Özet");
-        wsOzet.Cell(1, 1).Value = "Plan";
-        wsOzet.Cell(1, 2).Value = rapor.PlanAdi;
-        wsOzet.Cell(2, 1).Value = "Rapor Tarihi";
-        wsOzet.Cell(2, 2).Value = rapor.RaporTarihi.ToString("dd.MM.yyyy HH:mm");
-        wsOzet.Cell(3, 1).Value = "Toplam Malzeme";
-        wsOzet.Cell(3, 2).Value = rapor.ToplamMalzeme;
-        wsOzet.Cell(4, 1).Value = "Farksız";
-        wsOzet.Cell(4, 2).Value = rapor.FarksizMalzeme;
-        wsOzet.Cell(5, 1).Value = "Farklı";
-        wsOzet.Cell(5, 2).Value = rapor.FarkliMalzeme;
-
-        var wsBolge = wb.Worksheets.Add("Bölge Durumları");
-        wsBolge.Cell(1, 1).Value = "Bölge Kodu";
-        wsBolge.Cell(1, 2).Value = "Bölge Adı";
-        wsBolge.Cell(1, 3).Value = "Durum";
-        wsBolge.Cell(1, 4).Value = "ERP Karşılaştırma";
-        var satirNo = 2;
-        foreach (var b in rapor.BolgeDurumlari)
-        {
-            wsBolge.Cell(satirNo, 1).Value = b.BolgeKodu;
-            wsBolge.Cell(satirNo, 2).Value = b.BolgeAdi;
-            wsBolge.Cell(satirNo, 3).Value = b.OturumDurum;
-            wsBolge.Cell(satirNo, 4).Value = b.ErpKarsilastirmaYapildiMi ? "Evet" : "Hayır";
-            satirNo++;
-        }
-
-        var wsFark = wb.Worksheets.Add("Fark Detayları");
-        string[] basliklar = ["Malzeme Kodu", "Malzeme Adı", "Lot No", "Seri No", "Birim", "Depo Kodu", "Bölge", "ERP Miktar", "Fiili Miktar", "Fark", "Fark %", "Karar Tipi", "Manuel Karar Gerekçesi"];
-        for (int i = 0; i < basliklar.Length; i++)
-            wsFark.Cell(1, i + 1).Value = basliklar[i];
-
-        satirNo = 2;
-        foreach (var f in rapor.FarkDetaylari)
-        {
-            wsFark.Cell(satirNo, 1).Value = f.MalzemeKodu;
-            wsFark.Cell(satirNo, 2).Value = f.MalzemeAdi;
-            wsFark.Cell(satirNo, 3).Value = f.LotNo ?? "";
-            wsFark.Cell(satirNo, 4).Value = f.SeriNo ?? "";
-            wsFark.Cell(satirNo, 5).Value = f.Birim;
-            wsFark.Cell(satirNo, 6).Value = f.DepoKodu;
-            wsFark.Cell(satirNo, 7).Value = f.BolgeAdi;
-            wsFark.Cell(satirNo, 8).Value = f.ErpMiktar;
-            wsFark.Cell(satirNo, 9).Value = f.FiiliMiktar;
-            wsFark.Cell(satirNo, 10).Value = f.Fark;
-            wsFark.Cell(satirNo, 11).Value = Math.Round(f.FarkYuzdesi, 2);
-            wsFark.Cell(satirNo, 12).Value = f.KararTipi?.ToString() ?? "Otomatik";
-            wsFark.Cell(satirNo, 13).Value = f.ManuelKararGerekce ?? "";
-            satirNo++;
-        }
-
-        wsFark.Columns().AdjustToContents();
-
-        using var ms = new MemoryStream();
-        wb.SaveAs(ms);
-        return ms.ToArray();
-    }
 }
 
 internal static class StringExtensions

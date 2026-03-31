@@ -35,9 +35,9 @@ public record KesinFarkRaporDto(
     int PlanId,
     string PlanAdi,
     DateTime RaporTarihi,
-    int ToplamMalzeme,
-    int FarksizMalzeme,
-    int FarkliMalzeme,
+    int ToplamSatir,
+    int FarksizSatir,
+    int FarkliSatir,
     IEnumerable<BolgeDurumDto> BolgeDurumlari,
     IEnumerable<EkipSayimOzetDto> EkipSayimOzetleri,
     IEnumerable<FarkDetayDto> FarkDetaylari
@@ -46,15 +46,11 @@ public record KesinFarkRaporDto(
 public record FarkDetayDto(
     string MalzemeKodu,
     string MalzemeAdi,
-    string? LotNo,
-    string? SeriNo,
     string Birim,
-    string DepoKodu,
-    decimal ErpMiktar,
-    decimal FiiliMiktar,
+    decimal ErpMiktar,      // ERP'de yoksa 0
+    decimal FiiliMiktar,    // Sayımda yoksa 0
     decimal Fark,
     decimal FarkYuzdesi,
     KararTipi? KararTipi,
-    string? ManuelKararGerekce,
-    string BolgeAdi
+    string? ManuelKararGerekce
 );

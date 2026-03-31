@@ -89,7 +89,6 @@ public interface IRaporService
 {
     Task<SayimDurumRaporDto> GetSayimDurumRaporuAsync(int planId, CancellationToken ct = default);
     Task<KesinFarkRaporDto> GetKesinFarkRaporuAsync(int planId, CancellationToken ct = default);
-    Task<byte[]> ExportKesinFarkRaporuExcelAsync(int planId, CancellationToken ct = default);
 }
 public interface IMalzemeService
 {

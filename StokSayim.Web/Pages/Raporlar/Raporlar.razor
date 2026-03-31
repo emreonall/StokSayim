@@ -4,7 +4,6 @@
 @inject ISayimPlaniHttpService PlanService
 @inject IRaporHttpService RaporService
 @inject NavigationManager Nav
-@inject IJSRuntime JS
 
 <PageTitle>Raporlar</PageTitle>
 
@@ -30,9 +29,6 @@
         </div>
         @if (_secilenPlanId > 0)
         {
-            <SfButton CssClass="e-success" Disabled="@_exportYukleniyor" @onclick="ExcelExport">
-                @(_exportYukleniyor ? "Hazırlanıyor..." : "📥 Excel İndir")
-            </SfButton>
         }
     </div>
 </div>
@@ -128,49 +124,73 @@ else
         }
     }
 
-    @if (_farkRaporu != null && _farkRaporu.FarkDetaylari.Any())
+    @if (_farkRaporu != null)
     {
-        <!-- Fark Raporu -->
+        <!-- Sayım Sonuç Raporu -->
         <div class="ss-card">
-            <div class="ss-card-title">Kesin Fark Raporu</div>
+            <div class="ss-card-title">Sayım Sonuç Raporu</div>
             <div class="ss-stats" style="margin-bottom:16px">
                 <div class="ss-stat">
-                    <div class="ss-stat-label">Toplam Malzeme</div>
-                    <div class="ss-stat-value">@_farkRaporu.ToplamMalzeme.ToString("N0")</div>
+                    <div class="ss-stat-label">Toplam Satır</div>
+                    <div class="ss-stat-value">@_farkRaporu.ToplamSatir.ToString("N0")</div>
                 </div>
                 <div class="ss-stat success">
                     <div class="ss-stat-label">Farksız</div>
-                    <div class="ss-stat-value">@_farkRaporu.FarksizMalzeme.ToString("N0")</div>
+                    <div class="ss-stat-value">@_farkRaporu.FarksizSatir.ToString("N0")</div>
                 </div>
                 <div class="ss-stat danger">
                     <div class="ss-stat-label">Farklı</div>
-                    <div class="ss-stat-value">@_farkRaporu.FarkliMalzeme.ToString("N0")</div>
+                    <div class="ss-stat-value">@_farkRaporu.FarkliSatir.ToString("N0")</div>
                 </div>
             </div>
 
-            <SfGrid DataSource="@_farkRaporu.FarkDetaylari" AllowPaging="true" AllowSorting="true" AllowFiltering="true">
+            <SfGrid ID="farkRaporGrid" @ref="_farkGrid" DataSource="@_farkRaporu.FarkDetaylari" AllowPaging="true" AllowSorting="true" AllowFiltering="true" AllowExcelExport="true" Toolbar="@(new List<string>() { "ExcelExport", "CsvExport" })">
+                <GridEvents OnToolbarClick="ToolbarClickHandler" TValue="FarkDetayDto" />
                 <GridFilterSettings Type="Syncfusion.Blazor.Grids.FilterType.Menu" />
                 <GridPageSettings PageSize="20" />
                 <GridColumns>
                     <GridColumn Field="MalzemeKodu" HeaderText="Malzeme Kodu" Width="130" />
-                    <GridColumn Field="MalzemeAdi" HeaderText="Malzeme Adı" Width="200" />
-                    <GridColumn Field="LotNo" HeaderText="Lot No" Width="100" />
-                    <GridColumn Field="BolgeAdi" HeaderText="Bölge" Width="150" />
-                    <GridColumn Field="DepoKodu" HeaderText="Depo" Width="90" />
-                    <GridColumn Field="ErpMiktar" HeaderText="ERP" Format="N2" Width="100" TextAlign="TextAlign.Right" />
-                    <GridColumn Field="FiiliMiktar" HeaderText="Fiili" Format="N2" Width="100" TextAlign="TextAlign.Right" />
-                    <GridColumn Field="Fark" HeaderText="Fark" Width="100" TextAlign="TextAlign.Right">
+                    <GridColumn Field="MalzemeAdi" HeaderText="Malzeme Adı" Width="220" />
+                    <GridColumn Field="Birim" HeaderText="Birim" Width="80" TextAlign="TextAlign.Center" />
+                    <GridColumn Field="ErpMiktar" HeaderText="ERP Stok" Format="N2" Width="110" TextAlign="TextAlign.Right">
                         <Template>
                             @{
                                 var f = (FarkDetayDto)context;
                             }
-                            <span style="color:@(f.Fark > 0 ? "var(--success)" : "var(--danger)"); font-weight:600">
-                                @f.Fark.ToString("N2")
+                            <span style="@(f.ErpMiktar == 0 ? "color:var(--muted)" : "")">
+                                @(f.ErpMiktar == 0 ? "—" : f.ErpMiktar.ToString("N2"))
                             </span>
                         </Template>
                     </GridColumn>
+                    <GridColumn Field="FiiliMiktar" HeaderText="Sayım" Format="N2" Width="110" TextAlign="TextAlign.Right">
+                        <Template>
+                            @{
+                                var f = (FarkDetayDto)context;
+                            }
+                            <span style="@(f.FiiliMiktar == 0 ? "color:var(--muted)" : "")">
+                                @(f.FiiliMiktar == 0 ? "—" : f.FiiliMiktar.ToString("N2"))
+                            </span>
+                        </Template>
+                    </GridColumn>
+                    <GridColumn Field="Fark" HeaderText="Fark" Width="110" TextAlign="TextAlign.Right">
+                        <Template>
+                            @{
+                                var f = (FarkDetayDto)context;
+                            }
+                            @if (f.Fark == 0)
+                            {
+                                <span style="color:var(--success); font-weight:600">✓ 0</span>
+                            }
+                            else
+                            {
+                                <span style="color:@(f.Fark > 0 ? "var(--success)" : "var(--danger)"); font-weight:600">
+                                    @f.Fark.ToString("N2")
+                                </span>
+                            }
+                        </Template>
+                    </GridColumn>
                     <GridColumn Field="FarkYuzdesi" HeaderText="Fark %" Format="N1" Width="90" TextAlign="TextAlign.Right" />
-                    <GridColumn HeaderText="Karar" Width="110">
+                    <GridColumn Field="KararAdi" HeaderText="Karar" Width="110">
                         <Template>
                             @{
                                 var f = (FarkDetayDto)context;
@@ -179,9 +199,13 @@ else
                             {
                                 <span class="ss-badge ss-badge-warn" title="@f.ManuelKararGerekce">⚖️ Manuel</span>
                             }
+                            else if (f.Fark == 0)
+                            {
+                                <span class="ss-badge ss-badge-success">Eşleşti</span>
+                            }
                             else
                             {
-                                <span class="ss-badge ss-badge-muted">Otomatik</span>
+                                <span class="ss-badge ss-badge-danger">Fark Var</span>
                             }
                         </Template>
                     </GridColumn>
@@ -194,10 +218,10 @@ else
 @code {
     [Parameter] public int PlanId { get; set; }
 
+    private SfGrid<FarkDetayDto>? _farkGrid;
     private IEnumerable<SayimPlaniListDto> _planlar = [];
     private int _secilenPlanId;
     private bool _raporYukleniyor = false;
-    private bool _exportYukleniyor = false;
     private SayimDurumRaporDto? _durumRaporu;
     private KesinFarkRaporDto? _farkRaporu;
 
@@ -224,20 +248,19 @@ else
         _raporYukleniyor = false;
     }
 
-    private async Task ExcelExport()
+    private async Task ToolbarClickHandler(ClickEventArgs args)
     {
-        _exportYukleniyor = true;
-        try
-        {
-            var bytes = await RaporService.ExportExcelAsync(_secilenPlanId);
-            if (bytes != null)
+        if (args.Item.Id == "farkRaporGrid_excelexport")
+            await _farkGrid!.ExportToExcelAsync(new ExcelExportProperties
             {
-                var b64 = Convert.ToBase64String(bytes);
-                await JS.InvokeVoidAsync("downloadFile", b64, $"FarkRaporu_{_secilenPlanId}.xlsx",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            }
-        }
-        catch { }
-        finally { _exportYukleniyor = false; }
+                FileName = $"SayimSonucRaporu_{_secilenPlanId}_{DateTime.Now:yyyyMMdd}.xlsx",
+                IncludeTemplateColumn = true
+            });
+        else if (args.Item.Id == "farkRaporGrid_csvexport")
+            await _farkGrid!.ExportToCsvAsync(new ExcelExportProperties
+            {
+                FileName = $"SayimSonucRaporu_{_secilenPlanId}_{DateTime.Now:yyyyMMdd}.csv",
+                IncludeTemplateColumn = true
+            });
     }
 }

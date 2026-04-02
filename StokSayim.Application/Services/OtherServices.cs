@@ -720,6 +720,25 @@ public class RaporService : IRaporService
             }
         }
 
+        // --- ERP KONTROL SAYIM sonuçlarını uygula (varsa fiili değerin üzerine yazar) ---
+        var erpKontrolOturumu = await _uow.ErpKontrolOturumlari.GetByPlanIdAsync(planId, ct);
+        if (erpKontrolOturumu != null)
+        {
+            // Tamamlanmış ekiplerin sayım değerlerini malzeme bazında topla
+            var kontrolSonuclari = erpKontrolOturumu.Ekipler
+                .Where(e => e.Durum == ErpKontrolEkipDurum.Tamamlandi)
+                .SelectMany(e => e.Malzemeler)
+                .Where(m => m.SayilanMiktar.HasValue)
+                .GroupBy(m => m.MalzemeKodu)
+                .ToDictionary(g => g.Key, g => g.Sum(m => m.SayilanMiktar!.Value));
+
+            foreach (var kvp in kontrolSonuclari)
+            {
+                // ERP kontrol değeri geçerli sayım değeri olarak üst yazar
+                sayimSonuclari[kvp.Key] = (kvp.Value, "ERP Kontrol", null, null);
+            }
+        }
+
         // --- ERP STOKLARI topla: sadece malzeme kodu bazında ---
         // key: MalzemeKodu → ToplamMiktar
         var erpOzet = erpStoklar
@@ -758,6 +777,7 @@ public class RaporService : IRaporService
                 FiiliMiktar: fiiliMiktar,
                 Fark: fark,
                 FarkYuzdesi: Math.Round(farkYuzdesi, 2),
+                KararAdi: sayim.Karar == Domain.Enums.KararTipi.Manuel ? "Manuel" : fark == 0 ? "Eşleşti" : "Fark Var",
                 KararTipi: sayim.Karar,
                 ManuelKararGerekce: sayim.Gerekce
             ));
@@ -780,6 +800,7 @@ public class RaporService : IRaporService
                 FiiliMiktar: fiiliMiktar,
                 Fark: fiiliMiktar,
                 FarkYuzdesi: 100,
+                KararAdi: kvp.Value.Karar == Domain.Enums.KararTipi.Manuel ? "Manuel" : "Fark Var",
                 KararTipi: kvp.Value.Karar,
                 ManuelKararGerekce: kvp.Value.Gerekce
             ));

@@ -21,6 +21,7 @@ public class UnitOfWork : IUnitOfWork
     public ITurSonucuRepository TurSonuclari { get; }
     public IGorevBildirimiRepository GorevBildirimleri { get; }
     public IMalzemeRepository Malzemeler { get; }
+    public IErpKontrolOturumuRepository ErpKontrolOturumlari { get; }
 
     public UnitOfWork(AppDbContext context)
     {
@@ -36,6 +37,7 @@ public class UnitOfWork : IUnitOfWork
         TurSonuclari = new TurSonucuRepository(context);
         GorevBildirimleri = new GorevBildirimiRepository(context);
         Malzemeler = new MalzemeRepository(context);
+        ErpKontrolOturumlari = new ErpKontrolOturumuRepository(context);
     }
 
     public async Task<int> SaveChangesAsync(CancellationToken ct = default)

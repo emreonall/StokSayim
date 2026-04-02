@@ -252,3 +252,45 @@ public class MalzemeRepository : IMalzemeRepository
     public async Task AddRangeAsync(IEnumerable<Malzeme> malzemeler, CancellationToken ct = default)
         => await _context.Malzemeler.AddRangeAsync(malzemeler, ct);
 }
+public class ErpKontrolOturumuRepository : Repository<ErpKontrolOturumu>, IErpKontrolOturumuRepository
+{
+    public ErpKontrolOturumuRepository(AppDbContext context) : base(context) { }
+
+    public async Task<ErpKontrolOturumu?> GetByPlanIdAsync(int planId, CancellationToken ct = default)
+        => await _context.ErpKontrolOturumlari
+            .Include(o => o.Ekipler).ThenInclude(e => e.Ekip)
+            .Include(o => o.Ekipler).ThenInclude(e => e.Malzemeler)
+            .FirstOrDefaultAsync(o => o.SayimPlaniId == planId, ct);
+
+    public async Task<ErpKontrolOturumu?> GetWithEkiplerAsync(int id, CancellationToken ct = default)
+        => await _context.ErpKontrolOturumlari
+            .Include(o => o.Ekipler).ThenInclude(e => e.Ekip)
+            .Include(o => o.Ekipler).ThenInclude(e => e.Malzemeler)
+            .FirstOrDefaultAsync(o => o.Id == id, ct);
+
+    public async Task<ErpKontrolEkip?> GetEkipWithMalzemelerAsync(int ekipId, CancellationToken ct = default)
+        => await _context.ErpKontrolEkipler
+            .Include(e => e.Malzemeler)
+            .Include(e => e.Ekip)
+            .Include(e => e.ErpKontrolOturumu)
+            .FirstOrDefaultAsync(e => e.Id == ekipId, ct);
+
+    public async Task<ErpKontrolEkip?> GetEkipByPlanAndEkipAsync(int planId, int ekipId, CancellationToken ct = default)
+        => await _context.ErpKontrolEkipler
+            .Include(e => e.Malzemeler)
+            .Include(e => e.Ekip)
+            .Include(e => e.ErpKontrolOturumu)
+            .FirstOrDefaultAsync(e => e.ErpKontrolOturumu.SayimPlaniId == planId && e.EkipId == ekipId, ct);
+
+    public async Task<ErpKontrolEkip?> GetEkipByPlanAndKullaniciAsync(int planId, string kullaniciId, CancellationToken ct = default)
+        => await _context.ErpKontrolEkipler
+            .Include(e => e.Malzemeler)
+            .Include(e => e.Ekip).ThenInclude(ekip => ekip.EkipKullanicilari)
+            .Include(e => e.ErpKontrolOturumu)
+            .FirstOrDefaultAsync(e =>
+                e.ErpKontrolOturumu.SayimPlaniId == planId &&
+                e.Ekip.EkipKullanicilari.Any(k => k.KullaniciId == kullaniciId && k.AktifMi), ct);
+
+    public async Task<ErpKontrolMalzeme?> GetMalzemeAsync(int malzemeId, CancellationToken ct = default)
+        => await _context.ErpKontrolMalzemeler.FirstOrDefaultAsync(m => m.Id == malzemeId, ct);
+}

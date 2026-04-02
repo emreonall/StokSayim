@@ -6,7 +6,9 @@ using StokSayim.Application.DTOs.Ekip;
 using StokSayim.Application.DTOs.SayimOturumu;
 using StokSayim.Application.DTOs.SayimKaydi;
 using StokSayim.Application.DTOs.Rapor;
+using StokSayim.Application.DTOs.ErpKontrol;
 using StokSayim.Domain.Entities;
+using StokSayim.Domain.Enums;
 
 namespace StokSayim.Application.Interfaces.Services;
 
@@ -95,4 +97,19 @@ public interface IMalzemeService
     Task<MalzemeOzetDto?> GetByKodAsync(string malzemeKodu, CancellationToken ct = default);
     Task<IEnumerable<MalzemeDto>> GetAllAsync(CancellationToken ct = default);
     Task<MalzemeImportDto> ImportAsync(Stream dosya, string dosyaAdi, CancellationToken ct = default);
+}
+
+public interface IErpKontrolService
+{
+    Task<IEnumerable<ErpKontrolAtamaDto>> GetAtamaListesiAsync(int planId, CancellationToken ct = default);
+    Task<ErpKontrolOturumuDto> BaslatAsync(int planId, ErpKontrolBaslatDto request, string kullaniciId, CancellationToken ct = default);
+    Task<ErpKontrolOturumuDto?> GetOturumuAsync(int planId, CancellationToken ct = default);
+    Task<ErpKontrolEkipDetayDto?> GetEkipDetayAsync(int planId, int ekipId, CancellationToken ct = default);
+    Task<ErpKontrolEkipDetayDto?> GetEkipDetayByKullaniciAsync(int planId, string kullaniciId, CancellationToken ct = default);
+    Task MalzemeSayimGuncelleAsync(int malzemeId, ErpKontrolMalzemeSayimDto request, CancellationToken ct = default);
+    Task EkipTamamlaAsync(int erpKontrolEkipId, string kullaniciId, CancellationToken ct = default);
+    Task PlaniKapatAsync(int planId, string kullaniciId, CancellationToken ct = default);
+    Task<IEnumerable<ErpKontrolSonucDto>> GetSonuclarAsync(int planId, CancellationToken ct = default);
+    Task<ErpKontrolImportSonucDto> ImportSayimAsync(int erpKontrolEkipId, Stream dosya, string dosyaAdi, CancellationToken ct = default);
+    Task TerminalSayimGuncelleAsync(int planId, int ekipId, IEnumerable<ErpKontrolMalzemeSayimDto> kayitlar, CancellationToken ct = default);
 }

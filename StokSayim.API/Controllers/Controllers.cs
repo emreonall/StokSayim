@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using StokSayim.Application.DTOs.Auth;
 using StokSayim.Application.DTOs.Malzeme;
 using StokSayim.Application.DTOs.SayimKaydi;
+using StokSayim.Application.DTOs.ErpKontrol;
 using StokSayim.Application.Interfaces.Services;
 
 namespace StokSayim.API.Controllers;
@@ -105,6 +106,14 @@ public class EkipController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken ct) =>
         Ok(await _ekipService.GetAllAsync(ct));
+
+    [HttpGet("benim")]
+    public async Task<IActionResult> GetBenim(CancellationToken ct)
+    {
+        var kullaniciId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value;
+        var ekip = await _ekipService.GetEkipByKullaniciIdAsync(kullaniciId, ct);
+        return ekip == null ? NotFound() : Ok(new { ekip.Id, ekip.EkipAdi });
+    }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id, CancellationToken ct)
@@ -491,5 +500,106 @@ public class MalzemeController : ControllerBase
         using var stream = dosya.OpenReadStream();
         var sonuc = await _service.ImportAsync(stream, dosya.FileName, ct);
         return Ok(sonuc);
+    }
+}
+[ApiController]
+[Route("api/erp-kontrol")]
+[Authorize(Roles = "Admin,SayimSorumlusu,SayimEkibi")]
+public class ErpKontrolController : ControllerBase
+{
+    private readonly IErpKontrolService _service;
+    public ErpKontrolController(IErpKontrolService service) => _service = service;
+
+    // Atama listesi — fark olan malzemeler
+    [HttpGet("plan/{planId}/atama-listesi")]
+    [Authorize(Roles = "Admin,SayimSorumlusu")]
+    public async Task<IActionResult> GetAtamaListesi(int planId, CancellationToken ct) =>
+        Ok(await _service.GetAtamaListesiAsync(planId, ct));
+
+    // ERP kontrol sayımını başlat (ekip atamaları ile)
+    [HttpPost("plan/{planId}/baslat")]
+    [Authorize(Roles = "Admin,SayimSorumlusu")]
+    public async Task<IActionResult> Baslat(int planId, [FromBody] ErpKontrolBaslatDto request, CancellationToken ct)
+    {
+        var kullaniciId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value;
+        var sonuc = await _service.BaslatAsync(planId, request, kullaniciId, ct);
+        return Ok(sonuc);
+    }
+
+    // Oturum özeti
+    [HttpGet("plan/{planId}")]
+    public async Task<IActionResult> GetOturum(int planId, CancellationToken ct)
+    {
+        var sonuc = await _service.GetOturumuAsync(planId, ct);
+        return sonuc == null ? NotFound() : Ok(sonuc);
+    }
+
+    // Ekip kendi malzeme listesini alır (kör sayım)
+    [HttpGet("plan/{planId}/ekip/{ekipId}")]
+    public async Task<IActionResult> GetEkipDetay(int planId, int ekipId, CancellationToken ct)
+    {
+        var sonuc = await _service.GetEkipDetayAsync(planId, ekipId, ct);
+        return sonuc == null ? NotFound() : Ok(sonuc);
+    }
+
+    // Giriş yapan kullanıcının bu plandaki ERP kontrol görevini getir
+    [HttpGet("plan/{planId}/benim")]
+    public async Task<IActionResult> GetBenimEkipDetay(int planId, CancellationToken ct)
+    {
+        var kullaniciId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value;
+        var sonuc = await _service.GetEkipDetayByKullaniciAsync(planId, kullaniciId, ct);
+        return sonuc == null ? NotFound() : Ok(sonuc);
+    }
+
+    // Tek malzeme miktarı güncelle
+    [HttpPut("malzeme/{malzemeId}")]
+    public async Task<IActionResult> MalzemeSayimGuncelle(int malzemeId, [FromBody] ErpKontrolMalzemeSayimDto request, CancellationToken ct)
+    {
+        await _service.MalzemeSayimGuncelleAsync(malzemeId, request, ct);
+        return NoContent();
+    }
+
+    // Ekip tamamla
+    [HttpPost("ekip/{erpKontrolEkipId}/tamamla")]
+    public async Task<IActionResult> EkipTamamla(int erpKontrolEkipId, CancellationToken ct)
+    {
+        var kullaniciId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value;
+        await _service.EkipTamamlaAsync(erpKontrolEkipId, kullaniciId, ct);
+        return NoContent();
+    }
+
+    // Final sonuçlar
+    [HttpGet("plan/{planId}/sonuclar")]
+    [Authorize(Roles = "Admin,SayimSorumlusu")]
+    public async Task<IActionResult> GetSonuclar(int planId, CancellationToken ct) =>
+        Ok(await _service.GetSonuclarAsync(planId, ct));
+
+    // Planı manuel kapat
+    [HttpPost("plan/{planId}/kapat")]
+    [Authorize(Roles = "Admin,SayimSorumlusu")]
+    public async Task<IActionResult> PlaniKapat(int planId, CancellationToken ct)
+    {
+        var kullaniciId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value;
+        await _service.PlaniKapatAsync(planId, kullaniciId, ct);
+        return NoContent();
+    }
+
+    // Excel import
+    [HttpPost("ekip/{erpKontrolEkipId}/import")]
+    public async Task<IActionResult> Import(int erpKontrolEkipId, IFormFile dosya, CancellationToken ct)
+    {
+        if (dosya == null || dosya.Length == 0)
+            return BadRequest("Dosya boş.");
+        using var stream = dosya.OpenReadStream();
+        var sonuc = await _service.ImportSayimAsync(erpKontrolEkipId, stream, dosya.FileName, ct);
+        return Ok(sonuc);
+    }
+
+    // Terminal import (toplu miktar güncelleme)
+    [HttpPut("plan/{planId}/ekip/{ekipId}/terminal")]
+    public async Task<IActionResult> TerminalGuncelle(int planId, int ekipId, [FromBody] IEnumerable<ErpKontrolMalzemeSayimDto> kayitlar, CancellationToken ct)
+    {
+        await _service.TerminalSayimGuncelleAsync(planId, ekipId, kayitlar, ct);
+        return NoContent();
     }
 }

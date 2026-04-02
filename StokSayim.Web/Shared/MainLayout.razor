@@ -35,6 +35,11 @@
                     <span class="ss-nav-badge warn">@_bekleyenSayi</span>
                 }
             </NavLink>
+            <AuthorizeView Roles="SayimEkibi,Admin,SayimSorumlusu">
+                <NavLink class="ss-nav-item" href="/erp-kontrol-sayim/0">
+                    <span class="nav-icon">🔍</span> ERP Kontrol Sayımı
+                </NavLink>
+            </AuthorizeView>
 
             <div class="ss-nav-section">Raporlar</div>
             <NavLink class="ss-nav-item" href="/raporlar">

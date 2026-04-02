@@ -3,6 +3,8 @@
 @attribute [Authorize(Roles = "Admin,SayimSorumlusu")]
 @inject ISayimPlaniHttpService PlanService
 @inject IRaporHttpService RaporService
+@inject IErpKontrolHttpService ErpKontrolService
+@inject IEkipHttpService EkipService
 @inject NavigationManager Nav
 
 <PageTitle>Raporlar</PageTitle>
@@ -128,7 +130,32 @@ else
     {
         <!-- Sayım Sonuç Raporu -->
         <div class="ss-card">
-            <div class="ss-card-title">Sayım Sonuç Raporu</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
+                <div>
+                    <div class="ss-card-title" style="margin-bottom:4px">Sayım Sonuç Raporu</div>
+                    @if (_farkRaporu.FarkliSatir > 0)
+                    {
+                        <div style="font-size:12px; color:var(--muted)">
+                            Fark olan satırlarda ekip atayarak ERP kontrol sayımı başlatabilirsiniz.
+                        </div>
+                    }
+                </div>
+                <div style="display:flex; gap:8px; align-items:center">
+                    @if (_erpKontrolOturumu != null)
+                    {
+                        <span class="ss-badge @(_erpKontrolOturumu.Durum == ErpKontrolOturumuDurum.Tamamlandi ? "ss-badge-success" : "ss-badge-warn")">
+                            ERP Kontrol: @_erpKontrolOturumu.Durum
+                        </span>
+                    }
+                    @if (_malzemeEkipAtamalari.Any(kv => kv.Value > 0))
+                    {
+                        <SfButton CssClass="e-primary" @onclick="ErpKontrolKaydet">
+                            ✅ ERP Kontrol Sayımını Başlat (@_malzemeEkipAtamalari.Count(kv => kv.Value > 0) malzeme)
+                        </SfButton>
+                    }
+                </div>
+            </div>
+
             <div class="ss-stats" style="margin-bottom:16px">
                 <div class="ss-stat">
                     <div class="ss-stat-label">Toplam Satır</div>
@@ -144,13 +171,15 @@ else
                 </div>
             </div>
 
-            <SfGrid ID="farkRaporGrid" @ref="_farkGrid" DataSource="@_farkRaporu.FarkDetaylari" AllowPaging="true" AllowSorting="true" AllowFiltering="true" AllowExcelExport="true" Toolbar="@(new List<string>() { "ExcelExport", "CsvExport" })">
+            <SfGrid ID="farkRaporGrid" @ref="_farkGrid" DataSource="@_farkRaporu.FarkDetaylari"
+                    AllowPaging="true" AllowSorting="true" AllowFiltering="true"
+                    AllowExcelExport="true" Toolbar="@(new List<string>() { "ExcelExport", "CsvExport" })">
                 <GridEvents OnToolbarClick="ToolbarClickHandler" TValue="FarkDetayDto" />
-                <GridFilterSettings Type="Syncfusion.Blazor.Grids.FilterType.Menu" />
+                <GridFilterSettings Type="Syncfusion.Blazor.Grids.FilterType.FilterBar" />
                 <GridPageSettings PageSize="20" />
                 <GridColumns>
                     <GridColumn Field="MalzemeKodu" HeaderText="Malzeme Kodu" Width="130" />
-                    <GridColumn Field="MalzemeAdi" HeaderText="Malzeme Adı" Width="220" />
+                    <GridColumn Field="MalzemeAdi" HeaderText="Malzeme Adı" Width="200" />
                     <GridColumn Field="Birim" HeaderText="Birim" Width="80" TextAlign="TextAlign.Center" />
                     <GridColumn Field="ErpMiktar" HeaderText="ERP Stok" Format="N2" Width="110" TextAlign="TextAlign.Right">
                         <Template>
@@ -172,7 +201,7 @@ else
                             </span>
                         </Template>
                     </GridColumn>
-                    <GridColumn Field="Fark" HeaderText="Fark" Width="110" TextAlign="TextAlign.Right">
+                    <GridColumn Field="Fark" HeaderText="Fark" Width="100" TextAlign="TextAlign.Right">
                         <Template>
                             @{
                                 var f = (FarkDetayDto)context;
@@ -209,10 +238,35 @@ else
                             }
                         </Template>
                     </GridColumn>
+                    @if (_farkRaporu.FarkliSatir > 0 && _erpKontrolOturumu?.Durum != ErpKontrolOturumuDurum.Tamamlandi)
+                    {
+                        <GridColumn HeaderText="Kontrol Ekibi" Width="180" AllowFiltering="false" AllowSorting="false">
+                            <Template>
+                                @{
+                                    var f = (FarkDetayDto)context;
+                                }
+                                @if (f.Fark != 0)
+                                {
+                                    <SfDropDownList DataSource="@_tumEkipler"
+                                                    Value="@(_malzemeEkipAtamalari.GetValueOrDefault(f.MalzemeKodu, 0))"
+                                                    ValueChanged="@((int v) => _malzemeEkipAtamalari[f.MalzemeKodu] = v)"
+                                                    TValue="int" TItem="EkipDto"
+                                                    Placeholder="Ekip seç...">
+                                        <DropDownListFieldSettings Value="Id" Text="EkipAdi" />
+                                    </SfDropDownList>
+                                }
+                            </Template>
+                        </GridColumn>
+                    }
                 </GridColumns>
             </SfGrid>
         </div>
     }
+}
+
+@if (!string.IsNullOrEmpty(_mesaj))
+{
+    <div class="ss-alert @(_hata ? "ss-alert-danger" : "ss-alert-success")" style="margin-top:12px">@_mesaj</div>
 }
 
 @code {
@@ -224,6 +278,11 @@ else
     private bool _raporYukleniyor = false;
     private SayimDurumRaporDto? _durumRaporu;
     private KesinFarkRaporDto? _farkRaporu;
+    private ErpKontrolOturumuDto? _erpKontrolOturumu;
+    private IEnumerable<EkipDto> _tumEkipler = [];
+    private Dictionary<string, int> _malzemeEkipAtamalari = new();
+    private string _mesaj = "";
+    private bool _hata = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -243,6 +302,17 @@ else
         {
             _durumRaporu = await RaporService.GetDurumRaporuAsync(_secilenPlanId);
             _farkRaporu = await RaporService.GetKesinFarkRaporuAsync(_secilenPlanId);
+            _erpKontrolOturumu = await ErpKontrolService.GetOturumuAsync(_secilenPlanId);
+            _tumEkipler = await EkipService.GetAllAsync();
+
+            // Mevcut atamalar varsa grid'e yansıt
+            _malzemeEkipAtamalari = new();
+            if (_erpKontrolOturumu != null)
+            {
+                var atamalistesi = await ErpKontrolService.GetAtamaListesiAsync(_secilenPlanId);
+                foreach (var a in atamalistesi.Where(a => a.AtananEkipId.HasValue))
+                    _malzemeEkipAtamalari[a.MalzemeKodu] = a.AtananEkipId!.Value;
+            }
         }
         catch { }
         _raporYukleniyor = false;
@@ -262,5 +332,29 @@ else
                 FileName = $"SayimSonucRaporu_{_secilenPlanId}_{DateTime.Now:yyyyMMdd}.csv",
                 IncludeTemplateColumn = true
             });
+    }
+
+    private async Task ErpKontrolKaydet()
+    {
+        var ekipAtamalari = _malzemeEkipAtamalari
+            .Where(kv => kv.Value > 0)
+            .GroupBy(kv => kv.Value)
+            .Select(g => new ErpKontrolEkipAtamaDto(g.Key, g.Select(kv => kv.Key)))
+            .ToList();
+
+        if (!ekipAtamalari.Any())
+        {
+            _mesaj = "En az bir malzemeye ekip ataması yapılmalıdır."; _hata = true;
+            return;
+        }
+
+        try
+        {
+            var request = new ErpKontrolBaslatDto(ekipAtamalari);
+            _erpKontrolOturumu = await ErpKontrolService.BaslatAsync(_secilenPlanId, request);
+            _mesaj = $"ERP kontrol sayımı başlatıldı. {ekipAtamalari.Sum(e => e.MalzemeKodlari.Count())} malzeme atandı.";
+            _hata = false;
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
     }
 }

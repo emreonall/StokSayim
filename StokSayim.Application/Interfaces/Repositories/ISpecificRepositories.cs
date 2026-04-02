@@ -79,3 +79,12 @@ public interface IMalzemeRepository
     Task AddAsync(Malzeme malzeme, CancellationToken ct = default);
     Task AddRangeAsync(IEnumerable<Malzeme> malzemeler, CancellationToken ct = default);
 }
+public interface IErpKontrolOturumuRepository : IRepository<ErpKontrolOturumu>
+{
+    Task<ErpKontrolOturumu?> GetByPlanIdAsync(int planId, CancellationToken ct = default);
+    Task<ErpKontrolOturumu?> GetWithEkiplerAsync(int id, CancellationToken ct = default);
+    Task<ErpKontrolEkip?> GetEkipWithMalzemelerAsync(int ekipId, CancellationToken ct = default);
+    Task<ErpKontrolEkip?> GetEkipByPlanAndEkipAsync(int planId, int ekipId, CancellationToken ct = default);
+    Task<ErpKontrolEkip?> GetEkipByPlanAndKullaniciAsync(int planId, string kullaniciId, CancellationToken ct = default);
+    Task<ErpKontrolMalzeme?> GetMalzemeAsync(int malzemeId, CancellationToken ct = default);
+}

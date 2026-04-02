@@ -1,0 +1,268 @@
+@page "/erp-kontrol-sayim"
+@page "/erp-kontrol-sayim/{PlanId:int}"
+@attribute [Authorize]
+@inject IErpKontrolHttpService ErpKontrolService
+@inject ISayimPlaniHttpService PlanService
+@inject NavigationManager Nav
+
+<PageTitle>ERP Kontrol Sayımı</PageTitle>
+
+@if (PlanId == 0)
+{
+    <div class="ss-page-header">
+        <div>
+            <h1 class="ss-page-title">ERP Kontrol Sayımı</h1>
+            <p class="ss-page-subtitle">Plan seçin</p>
+        </div>
+    </div>
+    <div class="ss-card" style="max-width:400px">
+        <div class="ss-form-group">
+            <label>Plan</label>
+            <SfDropDownList DataSource="@_planlar" @bind-Value="_secilenPlanId"
+                            TValue="int" TItem="SayimPlaniListDto"
+                            Placeholder="Plan seçin...">
+                <DropDownListFieldSettings Value="Id" Text="PlanAdi" />
+                <DropDownListEvents TValue="int" TItem="SayimPlaniListDto"
+                                    ValueChange="@(e => Nav.NavigateTo($"/erp-kontrol-sayim/{e.Value}"))" />
+            </SfDropDownList>
+        </div>
+    </div>
+}
+else if (_yukleniyor)
+{
+    <div class="ss-loading"><SfSpinner Visible="true" /> Yükleniyor...</div>
+}
+else if (_ekipDetay == null)
+{
+    <div class="ss-alert ss-alert-info">Bu plan için size atanmış ERP kontrol sayımı bulunamadı.</div>
+}
+else
+{
+    <div class="ss-page-header">
+        <div>
+            <h1 class="ss-page-title">ERP Kontrol Sayımı</h1>
+            <p class="ss-page-subtitle">
+                @_ekipDetay.EkipAdi &nbsp;·&nbsp;
+                @_ekipDetay.Malzemeler.Count(m => m.Tamamlandi) / @_ekipDetay.Malzemeler.Count() malzeme tamamlandı
+            </p>
+        </div>
+        <div style="display:flex; gap:8px">
+            @if (_ekipDetay.Durum != ErpKontrolEkipDurum.Tamamlandi)
+            {
+                <SfButton CssClass="e-outline" @onclick="ExcelImportAc">📥 Excel ile Aktar</SfButton>
+                <SfButton CssClass="e-success" @onclick="TamamlaOnayAc">✅ Sayımı Tamamla</SfButton>
+            }
+            else
+            {
+                <span class="ss-badge ss-badge-success" style="font-size:14px; padding:8px 16px">✓ Tamamlandı</span>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_mesaj))
+    {
+        <div class="ss-alert @(_hata ? "ss-alert-danger" : "ss-alert-success")">@_mesaj</div>
+    }
+
+    <div class="ss-card">
+        <SfGrid DataSource="@_ekipDetay.Malzemeler.ToList()" AllowSorting="true" AllowFiltering="true">
+            <GridFilterSettings Type="Syncfusion.Blazor.Grids.FilterType.FilterBar" />
+            <GridColumns>
+                <GridColumn Field="MalzemeKodu" HeaderText="Malzeme Kodu" Width="140" />
+                <GridColumn Field="MalzemeAdi" HeaderText="Malzeme Adı" Width="250" />
+                <GridColumn Field="Birim" HeaderText="Birim" Width="80" TextAlign="TextAlign.Center" />
+                <GridColumn HeaderText="Sayılan Miktar" Width="200" TextAlign="TextAlign.Right" AllowFiltering="false">
+                    <Template>
+                        @{
+                            var m = (ErpKontrolMalzemeDto)context;
+                            var key = m.Id;
+                        }
+                        @if (_ekipDetay.Durum == ErpKontrolEkipDurum.Tamamlandi || m.Tamamlandi)
+                        {
+                            <span style="font-weight:600">@(m.SayilanMiktar?.ToString("N2") ?? "—")</span>
+                        }
+                        else
+                        {
+                            <SfNumericTextBox TValue="decimal?"
+                                              Value="@(_miktarlar.GetValueOrDefault(key))"
+                                              ValueChanged="@((decimal? v) => MiktarDegisti(key, v))"
+                                              Format="N2" Min="0" Width="140px" />
+                        }
+                    </Template>
+                </GridColumn>
+                <GridColumn HeaderText="Durum" Width="110" TextAlign="TextAlign.Center" AllowFiltering="false">
+                    <Template>
+                        @{
+                            var m = (ErpKontrolMalzemeDto)context;
+                        }
+                        @if (m.Tamamlandi)
+                        {
+                            <span class="ss-badge ss-badge-success">✓</span>
+                        }
+                        else if (_miktarlar.GetValueOrDefault(m.Id).HasValue)
+                        {
+                            <span class="ss-badge ss-badge-accent">Girildi</span>
+                        }
+                        else
+                        {
+                            <span class="ss-badge ss-badge-muted">Bekliyor</span>
+                        }
+                    </Template>
+                </GridColumn>
+            </GridColumns>
+        </SfGrid>
+    </div>
+}
+
+<!-- Tamamla onay dialog -->
+<SfDialog @bind-Visible="_tamamlaOnayDialogAcik" Header="Sayımı Tamamla" Width="420px" ShowCloseIcon="true">
+    <DialogTemplates>
+        <Content>
+            <div class="ss-alert ss-alert-warn">
+                <strong>Dikkat!</strong> Tamamladıktan sonra miktar değiştiremezsiniz.
+                Girilmemiş malzemeler 0 olarak kabul edilecektir.
+            </div>
+            @{
+                var eksik = _ekipDetay?.Malzemeler.Count(m => !_miktarlar.ContainsKey(m.Id) && !m.Tamamlandi) ?? 0;
+            }
+            @if (eksik > 0)
+            {
+                <div class="ss-alert ss-alert-info" style="margin-top:8px">
+                    @eksik malzemeye henüz miktar girilmemiş.
+                </div>
+            }
+        </Content>
+        <FooterTemplate>
+            <SfButton CssClass="e-outline" @onclick="@(() => _tamamlaOnayDialogAcik = false)">İptal</SfButton>
+            <SfButton CssClass="e-success" @onclick="Tamamla">Evet, Tamamla</SfButton>
+        </FooterTemplate>
+    </DialogTemplates>
+</SfDialog>
+
+<!-- Excel import dialog -->
+<SfDialog @bind-Visible="_excelDialogAcik" Header="Excel ile Sayım Aktar" Width="480px" ShowCloseIcon="true">
+    <DialogTemplates>
+        <Content>
+            <div class="ss-alert ss-alert-info" style="margin-bottom:12px">
+                Excel formatı: A kolonu Malzeme Kodu, B kolonu Miktar. İlk satır başlık.
+                Sadece size atanmış malzemeler işlenir.
+            </div>
+            <InputFile OnChange="DosyaSec" accept=".xlsx" />
+            @if (_importSonuc != null)
+            {
+                <div class="ss-alert @(_importSonuc.Basarili ? "ss-alert-success" : "ss-alert-warn")" style="margin-top:12px">
+                    @_importSonuc.Guncellenen malzeme güncellendi. @(_importSonuc.HataliSatir > 0 ? $"{_importSonuc.HataliSatir} hatalı satır." : "")
+                </div>
+            }
+        </Content>
+        <FooterTemplate>
+            <SfButton CssClass="e-outline" @onclick="@(() => _excelDialogAcik = false)">Kapat</SfButton>
+            <SfButton CssClass="e-primary" Disabled="@(_seciliDosya == null)" @onclick="ExcelImport">📥 Aktar</SfButton>
+        </FooterTemplate>
+    </DialogTemplates>
+</SfDialog>
+
+@code {
+    [Parameter] public int PlanId { get; set; }
+
+    private bool _yukleniyor = true;
+    private ErpKontrolEkipDetayDto? _ekipDetay;
+    private string _mesaj = "";
+    private bool _hata = false;
+    private bool _tamamlaOnayDialogAcik = false;
+    private bool _excelDialogAcik = false;
+    private IBrowserFile? _seciliDosya;
+    private ErpKontrolImportSonucDto? _importSonuc;
+    private IEnumerable<SayimPlaniListDto> _planlar = [];
+    private int _secilenPlanId;
+    private Dictionary<int, decimal?> _miktarlar = new();
+
+    private int _yukluPlanId = -1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _planlar = await PlanService.GetAllAsync();
+        if (PlanId > 0)
+            await Yukle();
+        else
+            _yukleniyor = false;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (PlanId > 0 && PlanId != _yukluPlanId)
+            await Yukle();
+        else if (PlanId == 0)
+            _yukleniyor = false;
+    }
+
+    private async Task Yukle()
+    {
+        _yukleniyor = true;
+        _ekipDetay = null;
+        _miktarlar = new();
+        try
+        {
+            _ekipDetay = await ErpKontrolService.GetBenimEkipDetayAsync(PlanId);
+
+            if (_ekipDetay != null)
+            {
+                _miktarlar = _ekipDetay.Malzemeler
+                    .Where(m => m.SayilanMiktar.HasValue)
+                    .ToDictionary(m => m.Id, m => m.SayilanMiktar);
+            }
+        }
+        catch { }
+        _yukluPlanId = PlanId;
+        _yukleniyor = false;
+    }
+
+    private void MiktarDegisti(int malzemeId, decimal? deger)
+    {
+        _miktarlar[malzemeId] = deger;
+    }
+
+    private void TamamlaOnayAc() => _tamamlaOnayDialogAcik = true;
+
+    private async Task Tamamla()
+    {
+        _tamamlaOnayDialogAcik = false;
+        try
+        {
+            // Girilmiş ama kaydedilmemiş miktarları toplu kaydet
+            foreach (var kv in _miktarlar.Where(kv => kv.Value.HasValue))
+                await ErpKontrolService.MalzemeSayimGuncelleAsync(kv.Key, new ErpKontrolMalzemeSayimDto(kv.Key, kv.Value!.Value));
+
+            await ErpKontrolService.EkipTamamlaAsync(_ekipDetay!.ErpKontrolEkipId);
+            _mesaj = "Sayım tamamlandı."; _hata = false;
+            await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+    }
+
+    private void ExcelImportAc()
+    {
+        _importSonuc = null;
+        _seciliDosya = null;
+        _excelDialogAcik = true;
+    }
+
+    private void DosyaSec(InputFileChangeEventArgs e) => _seciliDosya = e.File;
+
+    private async Task ExcelImport()
+    {
+        if (_seciliDosya == null) return;
+        try
+        {
+            using var ms = new MemoryStream();
+            await _seciliDosya.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024).CopyToAsync(ms);
+            ms.Seek(0, SeekOrigin.Begin);
+            var form = new MultipartFormDataContent();
+            form.Add(new StreamContent(ms), "dosya", _seciliDosya.Name);
+            _importSonuc = await ErpKontrolService.ImportSayimAsync(_ekipDetay!.ErpKontrolEkipId, form);
+            if (_importSonuc?.Basarili == true)
+                await Yukle();
+        }
+        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+    }
+}

@@ -27,6 +27,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<TurSonucuDetay> TurSonucuDetaylari => Set<TurSonucuDetay>();
     public DbSet<ManuelKarar> ManuelKararlar => Set<ManuelKarar>();
     public DbSet<GorevBildirimi> GorevBildirimleri => Set<GorevBildirimi>();
+    public DbSet<ErpKontrolOturumu> ErpKontrolOturumlari => Set<ErpKontrolOturumu>();
+    public DbSet<ErpKontrolEkip> ErpKontrolEkipler => Set<ErpKontrolEkip>();
+    public DbSet<ErpKontrolMalzeme> ErpKontrolMalzemeler => Set<ErpKontrolMalzeme>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

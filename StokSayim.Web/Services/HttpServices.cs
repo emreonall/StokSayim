@@ -8,6 +8,8 @@ using StokSayim.Application.DTOs.Rapor;
 using StokSayim.Application.DTOs.SayimKaydi;
 using StokSayim.Application.DTOs.SayimOturumu;
 using StokSayim.Application.DTOs.SayimPlani;
+using StokSayim.Application.DTOs.ErpKontrol;
+using StokSayim.Domain.Enums;
 
 namespace StokSayim.Web.Services;
 
@@ -45,6 +47,7 @@ public interface IEkipHttpService
 {
     Task<IEnumerable<EkipDto>> GetAllAsync();
     Task<EkipDto?> GetByIdAsync(int id);
+    Task<(int Id, string EkipAdi)?> GetBenimEkibimAsync();
     Task<EkipDto?> CreateAsync(EkipOlusturDto request);
     Task UpdateAsync(int id, EkipOlusturDto request);
     Task KullaniciEkleAsync(int ekipId, string kullaniciId);
@@ -188,6 +191,16 @@ public class EkipHttpService : IEkipHttpService
 
     public async Task<EkipDto?> GetByIdAsync(int id)
         => await _http.GetFromJsonAsync<EkipDto>($"api/ekip/{id}");
+
+    public async Task<(int Id, string EkipAdi)?> GetBenimEkibimAsync()
+    {
+        try
+        {
+            var r = await _http.GetFromJsonAsync<EkipDto>("api/ekip/benim");
+            return r == null ? null : (r.Id, r.EkipAdi);
+        }
+        catch { return null; }
+    }
 
     public async Task<EkipDto?> CreateAsync(EkipOlusturDto request)
     {
@@ -363,5 +376,64 @@ public class MalzemeHttpService
         content.Add(new StreamContent(stream), "dosya", dosya.Name);
         var r = await _http.PostAsync("api/malzeme/import", content);
         return r.IsSuccessStatusCode ? await r.Content.ReadFromJsonAsync<MalzemeImportDto>() : null;
+    }
+}
+
+public interface IErpKontrolHttpService
+{
+    Task<IEnumerable<ErpKontrolAtamaDto>> GetAtamaListesiAsync(int planId);
+    Task<ErpKontrolOturumuDto?> BaslatAsync(int planId, ErpKontrolBaslatDto request);
+    Task<ErpKontrolOturumuDto?> GetOturumuAsync(int planId);
+    Task<ErpKontrolEkipDetayDto?> GetEkipDetayAsync(int planId, int ekipId);
+    Task<ErpKontrolEkipDetayDto?> GetBenimEkipDetayAsync(int planId);
+    Task MalzemeSayimGuncelleAsync(int malzemeId, ErpKontrolMalzemeSayimDto request);
+    Task EkipTamamlaAsync(int erpKontrolEkipId);
+    Task PlaniKapatAsync(int planId);
+    Task<IEnumerable<ErpKontrolSonucDto>> GetSonuclarAsync(int planId);
+    Task<ErpKontrolImportSonucDto?> ImportSayimAsync(int erpKontrolEkipId, MultipartFormDataContent form);
+}
+
+public class ErpKontrolHttpService : IErpKontrolHttpService
+{
+    private readonly HttpClient _http;
+    public ErpKontrolHttpService(HttpClient http) => _http = http;
+
+    public async Task<IEnumerable<ErpKontrolAtamaDto>> GetAtamaListesiAsync(int planId)
+        => await _http.GetFromJsonAsync<IEnumerable<ErpKontrolAtamaDto>>($"api/erp-kontrol/plan/{planId}/atama-listesi") ?? [];
+
+    public async Task<ErpKontrolOturumuDto?> BaslatAsync(int planId, ErpKontrolBaslatDto request)
+    {
+        var r = await _http.PostAsJsonAsync($"api/erp-kontrol/plan/{planId}/baslat", request);
+        return r.IsSuccessStatusCode ? await r.Content.ReadFromJsonAsync<ErpKontrolOturumuDto>() : null;
+    }
+
+    public async Task<ErpKontrolOturumuDto?> GetOturumuAsync(int planId)
+        => await _http.GetFromJsonAsync<ErpKontrolOturumuDto?>($"api/erp-kontrol/plan/{planId}");
+
+    public async Task<ErpKontrolEkipDetayDto?> GetEkipDetayAsync(int planId, int ekipId)
+        => await _http.GetFromJsonAsync<ErpKontrolEkipDetayDto?>($"api/erp-kontrol/plan/{planId}/ekip/{ekipId}");
+
+    public async Task<ErpKontrolEkipDetayDto?> GetBenimEkipDetayAsync(int planId)
+    {
+        try { return await _http.GetFromJsonAsync<ErpKontrolEkipDetayDto?>($"api/erp-kontrol/plan/{planId}/benim"); }
+        catch { return null; }
+    }
+
+    public async Task MalzemeSayimGuncelleAsync(int malzemeId, ErpKontrolMalzemeSayimDto request)
+        => await _http.PutAsJsonAsync($"api/erp-kontrol/malzeme/{malzemeId}", request);
+
+    public async Task EkipTamamlaAsync(int erpKontrolEkipId)
+        => await _http.PostAsync($"api/erp-kontrol/ekip/{erpKontrolEkipId}/tamamla", null);
+
+    public async Task PlaniKapatAsync(int planId)
+        => await _http.PostAsync($"api/erp-kontrol/plan/{planId}/kapat", null);
+
+    public async Task<IEnumerable<ErpKontrolSonucDto>> GetSonuclarAsync(int planId)
+        => await _http.GetFromJsonAsync<IEnumerable<ErpKontrolSonucDto>>($"api/erp-kontrol/plan/{planId}/sonuclar") ?? [];
+
+    public async Task<ErpKontrolImportSonucDto?> ImportSayimAsync(int erpKontrolEkipId, MultipartFormDataContent form)
+    {
+        var r = await _http.PostAsync($"api/erp-kontrol/ekip/{erpKontrolEkipId}/import", form);
+        return r.IsSuccessStatusCode ? await r.Content.ReadFromJsonAsync<ErpKontrolImportSonucDto>() : null;
     }
 }

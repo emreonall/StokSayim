@@ -74,6 +74,7 @@ public static class ServiceExtensions
         services.AddScoped<ISayimKaydiService, SayimKaydiService>();
         services.AddScoped<IRaporService, RaporService>();
         services.AddScoped<IMalzemeService, MalzemeService>();
+        services.AddScoped<IErpKontrolService, ErpKontrolService>();
         return services;
     }
 

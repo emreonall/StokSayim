@@ -15,6 +15,7 @@ public interface IUnitOfWork : IDisposable
     ITurSonucuRepository TurSonuclari { get; }
     IGorevBildirimiRepository GorevBildirimleri { get; }
     IMalzemeRepository Malzemeler { get; }
+    IErpKontrolOturumuRepository ErpKontrolOturumlari { get; }
 
     Task<int> SaveChangesAsync(CancellationToken ct = default);
     Task BeginTransactionAsync(CancellationToken ct = default);

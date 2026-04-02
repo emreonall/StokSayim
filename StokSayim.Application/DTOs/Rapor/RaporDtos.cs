@@ -51,6 +51,7 @@ public record FarkDetayDto(
     decimal FiiliMiktar,    // Sayımda yoksa 0
     decimal Fark,
     decimal FarkYuzdesi,
+    string KararAdi,        // "Eşleşti" / "Fark Var" / "Manuel"
     KararTipi? KararTipi,
     string? ManuelKararGerekce
 );

@@ -79,3 +79,43 @@ public class SayimKaydiDetay : BaseEntity
     // Navigation
     public SayimKaydi SayimKaydi { get; set; } = null!;
 }
+
+// ─── ERP Kontrol Sayımı ───────────────────────────────────────────────────────
+
+public class ErpKontrolOturumu : BaseEntity
+{
+    public int SayimPlaniId { get; set; }
+    public ErpKontrolOturumuDurum Durum { get; set; } = ErpKontrolOturumuDurum.Beklemede;
+    public DateTime? TamamlanmaTarihi { get; set; }
+
+    // Navigation
+    public SayimPlani SayimPlani { get; set; } = null!;
+    public ICollection<ErpKontrolEkip> Ekipler { get; set; } = new List<ErpKontrolEkip>();
+}
+
+public class ErpKontrolEkip : BaseEntity
+{
+    public int ErpKontrolOturumuId { get; set; }
+    public int EkipId { get; set; }
+    public ErpKontrolEkipDurum Durum { get; set; } = ErpKontrolEkipDurum.Beklemede;
+    public DateTime? TamamlanmaTarihi { get; set; }
+
+    // Navigation
+    public ErpKontrolOturumu ErpKontrolOturumu { get; set; } = null!;
+    public Ekip Ekip { get; set; } = null!;
+    public ICollection<ErpKontrolMalzeme> Malzemeler { get; set; } = new List<ErpKontrolMalzeme>();
+}
+
+public class ErpKontrolMalzeme : BaseEntity
+{
+    public int ErpKontrolEkipId { get; set; }
+    public string MalzemeKodu { get; set; } = string.Empty;
+    public string MalzemeAdi { get; set; } = string.Empty;
+    public string Birim { get; set; } = string.Empty;
+    // ErpMiktar burada YOK — kör sayım
+    public decimal? SayilanMiktar { get; set; }  // null = henüz sayılmadı
+    public bool Tamamlandi { get; set; } = false;
+
+    // Navigation
+    public ErpKontrolEkip ErpKontrolEkip { get; set; } = null!;
+}

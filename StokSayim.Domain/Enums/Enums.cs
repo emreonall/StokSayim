@@ -77,3 +77,17 @@ public enum GorevBildirimDurum
     Beklemede = 0,
     Islendi = 1
 }
+
+public enum ErpKontrolOturumuDurum
+{
+    Beklemede = 0,
+    DevamEdiyor = 1,
+    Tamamlandi = 2
+}
+
+public enum ErpKontrolEkipDurum
+{
+    Beklemede = 0,
+    DevamEdiyor = 1,
+    Tamamlandi = 2
+}

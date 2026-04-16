@@ -388,8 +388,9 @@ public class SayimKaydiService : ISayimKaydiService
 
         foreach (var oturum in oturumlar)
         {
-            // Onaylanmış oturumları atla
-            if (oturum.Durum == SayimOturumuDurum.Onaylandi) continue;
+            // Onaylanmış veya ManuelKarar ile kapatılmış oturumları atla
+            if (oturum.Durum == SayimOturumuDurum.Onaylandi ||
+                oturum.Durum == SayimOturumuDurum.ManuelKarar) continue;
 
             // Aktif turdaki katılımcıları listele — kayıt olsun olmasın
             var aktifTur = oturum.SayimTurlari
@@ -398,6 +399,10 @@ public class SayimKaydiService : ISayimKaydiService
 
             foreach (var katilimci in aktifTur.Katilimcilar)
             {
+                // Sayım kaydı zaten tamamlanmışsa gösterme
+                var mevcutKaydi = aktifTur.SayimKayitlari
+                    .FirstOrDefault(k => k.EkipId == katilimci.EkipId);
+                if (mevcutKaydi?.Durum == SayimKaydiDurum.Tamamlandi) continue;
                 var kullaniciAdlari = katilimci.Ekip?.EkipKullanicilari
                     .Select(ek => ek.Kullanici?.AdSoyad)
                     .Where(ad => !string.IsNullOrWhiteSpace(ad))

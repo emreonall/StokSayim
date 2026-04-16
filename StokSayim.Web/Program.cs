@@ -38,5 +38,6 @@ builder.Services.AddScoped<IRaporHttpService, RaporHttpService>();
 builder.Services.AddScoped<IKullaniciHttpService, KullaniciHttpService>();
 builder.Services.AddScoped<MalzemeHttpService>();
 builder.Services.AddScoped<IErpKontrolHttpService, ErpKontrolHttpService>();
+builder.Services.AddScoped<ToastService>();
 
 await builder.Build().RunAsync();

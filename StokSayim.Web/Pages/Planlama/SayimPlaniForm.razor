@@ -18,6 +18,10 @@
 
 @if (!string.IsNullOrEmpty(_hata))
 {
+    <SfToast @ref="ToastObj" Title="Hata" Content="@_hata" CssClass="e-toast-danger" Icon="e-error">
+        <ToastPosition X="Right" Y="Top" />
+        
+    </SfToast>
     <div class="ss-alert ss-alert-danger">@_hata</div>
 }
 
@@ -134,6 +138,7 @@
     private string _topluKodlar = "";
     private string _hata = "";
     private bool _yukleniyor = false;
+    SfToast? ToastObj;
 
     protected override async Task OnInitializedAsync()
     {
@@ -195,9 +200,8 @@
     {
         _hata = "";
         if (string.IsNullOrWhiteSpace(_planAdi)) { _hata = "Plan adı zorunludur."; return; }
-        if (!_depoKodlari.Any()) { _hata = "En az bir depo kodu zorunludur."; return; }
-        if (_bitis < _baslangic) { _hata = "Bitiş tarihi başlangıçtan önce olamaz."; return; }
-
+        if (!_depoKodlari.Any()) { _hata = "En az bir depo kodu zorunludur."; await this.ToastObj!.ShowAsync(); return; }
+        if (_bitis < _baslangic) { _hata = "Bitiş tarihi başlangıçtan önce olamaz."; await this.ToastObj!.ShowAsync(); return; }
         _yukleniyor = true;
         try
         {
@@ -214,7 +218,8 @@
                 Nav.NavigateTo($"/sayim-planlari/{Id}");
             }
         }
-        catch (Exception ex) { _hata = ex.Message; }
+        catch (Exception ex) { _hata = ex.Message; await this.ToastObj!.ShowAsync(); }
+
         finally { _yukleniyor = false; }
     }
 }

@@ -31,6 +31,29 @@ app.UseHttpsRedirection();
 app.UseCors("AllowBlazor");
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseExceptionHandler(errApp => errApp.Run(async ctx =>
+{
+    var ex = ctx.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+    if (ex == null) return;
+    ctx.Response.ContentType = "application/json";
+    if (ex is InvalidOperationException || ex is ArgumentException)
+    {
+        ctx.Response.StatusCode = 400;
+        await ctx.Response.WriteAsJsonAsync(new { Title = "Hata", Detail = ex.Message });
+    }
+    else if (ex is KeyNotFoundException)
+    {
+        ctx.Response.StatusCode = 404;
+        await ctx.Response.WriteAsJsonAsync(new { Title = "Bulunamadı", Detail = ex.Message });
+    }
+    else
+    {
+        ctx.Response.StatusCode = 500;
+        await ctx.Response.WriteAsJsonAsync(new { Title = "Sunucu hatası", Detail = ex.Message });
+    }
+}));
+
 app.MapControllers();
 
 // Seed data

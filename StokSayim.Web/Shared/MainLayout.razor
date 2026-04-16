@@ -3,6 +3,15 @@
 @inject IAuthHttpService AuthService
 @inject AuthenticationStateProvider AuthProvider
 @inject ISayimOturumuHttpService OturumuService
+@inject ToastService Toast
+
+<SfToast @ref="_toast" NewestOnTop="true" ShowProgressBar="true" Position="@_toastPos">
+    <ToastTemplates>
+        <Template>
+            @_toastMesaj
+        </Template>
+    </ToastTemplates>
+</SfToast>
 
 <div class="ss-layout">
     <!-- Sidebar -->
@@ -89,15 +98,43 @@
 @code {
     private int _bekleyenSayi = 0;
     private System.Threading.Timer? _timer;
+    private SfToast? _toast;
+    private string _toastMesaj = "";
+    private ToastPosition _toastPos = new() { X = "Right", Y = "Top" };
 
     protected override async Task OnInitializedAsync()
     {
+        Toast.OnMesaj += async mesaj => await MesajGoster(mesaj);
         await YukleBeleyenler();
         _timer = new System.Threading.Timer(async _ =>
         {
             await YukleBeleyenler();
             await InvokeAsync(StateHasChanged);
         }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private async Task MesajGoster(ToastMesaj mesaj)
+    {
+        await InvokeAsync(async () =>
+        {
+            _toastMesaj = mesaj.Mesaj;
+            var cssClass = mesaj.Tip switch
+            {
+                ToastTip.Basari => "e-toast-success",
+                ToastTip.Hata => "e-toast-danger",
+                ToastTip.Uyari => "e-toast-warning",
+                _ => "e-toast-info"
+            };
+            if (_toast != null)
+                await _toast.ShowAsync(new ToastModel
+                {
+                    Content = mesaj.Mesaj,
+                    CssClass = cssClass,
+                    Timeout = mesaj.Tip == ToastTip.Hata ? 6000 : 3000,
+                    ShowProgressBar = true
+                });
+            StateHasChanged();
+        });
     }
 
     private async Task YukleBeleyenler()
@@ -117,5 +154,9 @@
         Nav.NavigateTo("/login");
     }
 
-    public void Dispose() => _timer?.Dispose();
+    public void Dispose()
+    {
+        Toast.OnMesaj -= async mesaj => await MesajGoster(mesaj);
+        _timer?.Dispose();
+    }
 }

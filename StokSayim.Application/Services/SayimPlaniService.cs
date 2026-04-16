@@ -118,9 +118,19 @@ public class SayimPlaniService : ISayimPlaniService
             throw new InvalidOperationException("Sadece Aktif durumdaki plan tamamlanabilir.");
 
         var oturumlar = await _uow.SayimOturumlari.GetByPlanIdAsync(id, ct);
+        var bolgeler = await _uow.Bolgeler.GetByPlanIdAsync(id, ct);
+
+        if (!bolgeler.Any())
+            throw new InvalidOperationException("Plana henüz bölge tanımlanmamış.");
 
         if (!oturumlar.Any())
-            throw new InvalidOperationException("Henüz hiçbir bölge sayımı başlatılmamış.");
+            throw new InvalidOperationException("Henüz hiçbir bölgede sayım başlatılmamış.");
+
+        var sayimBaslatilanBolge = oturumlar.Select(o => o.BolgeId).Distinct().Count();
+        var toplamBolge = bolgeler.Count();
+        if (sayimBaslatilanBolge < toplamBolge)
+            throw new InvalidOperationException(
+                $"{toplamBolge - sayimBaslatilanBolge} bölgede sayım henüz başlatılmamış.");
 
         var tamamlanmamislar = oturumlar.Where(o =>
             o.Durum != SayimOturumuDurum.Onaylandi &&

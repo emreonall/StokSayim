@@ -142,10 +142,16 @@ public class SayimPlaniHttpService : ISayimPlaniHttpService
         => await _http.PutAsJsonAsync($"api/sayimplani/{id}", request);
 
     public async Task AktifEtAsync(int id)
-        => await _http.PostAsync($"api/sayimplani/{id}/aktif-et", null);
+    {
+        var r = await _http.PostAsync($"api/sayimplani/{id}/aktif-et", null);
+        await r.EnsureApiSuccessAsync();
+    }
 
     public async Task SayimiTamamlaAsync(int id)
-        => await _http.PostAsync($"api/sayimplani/{id}/sayimi-tamamla", null);
+    {
+        var r = await _http.PostAsync($"api/sayimplani/{id}/sayimi-tamamla", null);
+        await r.EnsureApiSuccessAsync();
+    }
 
     public async Task<ErpImportSonucDto?> ImportErpAsync(int id, MultipartFormDataContent form)
     {
@@ -175,7 +181,10 @@ public class BolgeHttpService : IBolgeHttpService
         => await _http.PutAsJsonAsync($"api/bolge/{id}", request);
 
     public async Task DeleteAsync(int id)
-        => await _http.DeleteAsync($"api/bolge/{id}");
+    {
+        var r = await _http.DeleteAsync($"api/bolge/{id}");
+        await r.EnsureApiSuccessAsync();
+    }
 
     public async Task EkipGrubuAtaAsync(int id, EkipGrubuAtaDto request)
         => await _http.PostAsJsonAsync($"api/bolge/{id}/ekip-grubu", request);
@@ -227,25 +236,40 @@ public class SayimOturumuHttpService : ISayimOturumuHttpService
         => await _http.GetFromJsonAsync<SayimOturumuDetayDto>($"api/sayimoturumu/bolge/{bolgeId}");
 
     public async Task BaslatAsync(int bolgeId)
-        => await _http.PostAsync($"api/sayimoturumu/bolge/{bolgeId}/baslat", null);
+    {
+        var r = await _http.PostAsync($"api/sayimoturumu/bolge/{bolgeId}/baslat", null);
+        await r.EnsureApiSuccessAsync();
+    }
 
     public async Task<IEnumerable<GorevBildirimDto>> GetBekleyenBildirimlerAsync()
         => await _http.GetFromJsonAsync<IEnumerable<GorevBildirimDto>>("api/sayimoturumu/bekleyen-bildirimler") ?? [];
 
     public async Task KontrolTuruAcAsync(int oturumuId, KontrolTuruAcDto request)
-        => await _http.PostAsJsonAsync($"api/sayimoturumu/{oturumuId}/kontrol-turu-ac", request);
+    {
+        var r = await _http.PostAsJsonAsync($"api/sayimoturumu/{oturumuId}/kontrol-turu-ac", request);
+        await r.EnsureApiSuccessAsync();
+    }
 
     public async Task<TurSonucuDto?> GetTurSonucuAsync(int turId)
         => await _http.GetFromJsonAsync<TurSonucuDto>($"api/sayimoturumu/tur-sonucu/{turId}");
 
     public async Task ManuelKararVerAsync(int detayId, ManuelKararDto request)
-        => await _http.PostAsJsonAsync($"api/sayimoturumu/tur-sonucu-detay/{detayId}/manuel-karar", request);
+    {
+        var r = await _http.PostAsJsonAsync($"api/sayimoturumu/tur-sonucu-detay/{detayId}/manuel-karar", request);
+        await r.EnsureApiSuccessAsync();
+    }
 
     public async Task ErpKarsilastirmaBaslatAsync(int planId)
-        => await _http.PostAsync($"api/sayimoturumu/plan/{planId}/erp-karsilastirma-baslat", null);
+    {
+        var r = await _http.PostAsync($"api/sayimoturumu/plan/{planId}/erp-karsilastirma-baslat", null);
+        await r.EnsureApiSuccessAsync();
+    }
 
     public async Task HesaplaKarsilastirmaAsync(int turId)
-        => await _http.PostAsync($"api/sayimoturumu/tur-sonucu/{turId}/hesapla", null);
+    {
+        var r = await _http.PostAsync($"api/sayimoturumu/tur-sonucu/{turId}/hesapla", null);
+        await r.EnsureApiSuccessAsync();
+    }
 }
 
 public class SayimKaydiHttpService : ISayimKaydiHttpService
@@ -437,3 +461,27 @@ public class ErpKontrolHttpService : IErpKontrolHttpService
         return r.IsSuccessStatusCode ? await r.Content.ReadFromJsonAsync<ErpKontrolImportSonucDto>() : null;
     }
 }
+
+// ─── HTTP Helper ──────────────────────────────────────────────────────────────
+
+public static class HttpClientExtensions
+{
+    public static async Task EnsureApiSuccessAsync(this HttpResponseMessage response)
+    {
+        if (response.IsSuccessStatusCode) return;
+        string mesaj;
+        try
+        {
+            var hata = await response.Content.ReadFromJsonAsync<ApiHataDto>();
+            mesaj = hata?.Detail ?? hata?.Title ?? response.ReasonPhrase ?? "Bilinmeyen hata";
+        }
+        catch
+        {
+            mesaj = await response.Content.ReadAsStringAsync();
+            if (string.IsNullOrWhiteSpace(mesaj)) mesaj = response.ReasonPhrase ?? "Bilinmeyen hata";
+        }
+        throw new InvalidOperationException(mesaj);
+    }
+}
+
+public record ApiHataDto(string? Title, string? Detail);

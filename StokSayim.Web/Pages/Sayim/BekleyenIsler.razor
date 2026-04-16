@@ -1,6 +1,7 @@
 @page "/bekleyen-isler"
 @attribute [Authorize(Roles = "Admin,SayimSorumlusu")]
 @inject ISayimOturumuHttpService OturumuService
+@inject ToastService Toast
 @inject IEkipHttpService EkipService
 @inject NavigationManager Nav
 
@@ -29,10 +30,6 @@ else if (!_bildirimler.Any())
 }
 else
 {
-    @if (!string.IsNullOrEmpty(_mesaj))
-    {
-        <div class="ss-alert @(_hata ? "ss-alert-danger" : "ss-alert-success")">@_mesaj</div>
-    }
 
     <div class="ss-notif-list">
         @foreach (var b in _bildirimler)
@@ -127,8 +124,6 @@ else
 @code {
     private bool _yukleniyor = true;
     private IEnumerable<GorevBildirimDto> _bildirimler = [];
-    private string _mesaj = "";
-    private bool _hata = false;
 
     // Kontrol turu dialog
     private bool _kontrolDialogAcik = false;
@@ -172,7 +167,7 @@ else
         if (_aktifBildirim == null) return;
         if (!_kontrolEkipSatirlari.Any() || _kontrolEkipSatirlari.Any(e => e.EkipId == 0))
         {
-            _mesaj = "Tüm ekipler seçilmeli."; _hata = true; return;
+            Toast.Hata("Tüm ekipler seçilmeli."); return;
         }
 
         _islemYukleniyor = true;
@@ -184,10 +179,10 @@ else
             );
             await OturumuService.KontrolTuruAcAsync(_aktifBildirim.SayimOturumuId, dto);
             _kontrolDialogAcik = false;
-            _mesaj = "Kontrol turu açıldı."; _hata = false;
+            Toast.Basari("Kontrol turu açıldı.");
             await Yukle();
         }
-        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+        catch (Exception ex) { Toast.Hata(ex.Message); }
         finally { _islemYukleniyor = false; }
     }
 }

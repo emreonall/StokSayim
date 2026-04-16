@@ -1,6 +1,7 @@
 @page "/bolgeler/{Id:int}"
 @attribute [Authorize]
 @inject IBolgeHttpService BolgeService
+@inject ToastService Toast
 @inject IEkipHttpService EkipService
 @inject ISayimOturumuHttpService OturumuService
 @inject NavigationManager Nav
@@ -37,10 +38,6 @@ else
         </div>
     </div>
 
-    @if (!string.IsNullOrEmpty(_mesaj))
-    {
-        <div class="ss-alert @(_hata ? "ss-alert-danger" : "ss-alert-success")">@_mesaj</div>
-    }
 
     <div class="ss-grid-2">
         <!-- Ekip Grubu -->
@@ -261,8 +258,6 @@ else
     private bool _yukleniyor = true;
     private BolgeDetayDto? _bolge;
     private SayimOturumuDetayDto? _oturum;
-    private string _mesaj = "";
-    private bool _hata = false;
 
     // Ekip grubu dialog
     private bool _ekipGrubuDialogAcik = false;
@@ -294,10 +289,10 @@ else
         try
         {
             await OturumuService.BaslatAsync(Id);
-            _mesaj = "Sayım başlatıldı."; _hata = false;
+            Toast.Basari("Sayım başlatıldı.");
             await Yukle();
         }
-        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+        catch (Exception ex) { Toast.Hata(ex.Message); }
     }
 
     private async Task HesaplaKarsilastirma(int turId)
@@ -305,10 +300,10 @@ else
         try
         {
             await OturumuService.HesaplaKarsilastirmaAsync(turId);
-            _mesaj = "Karşılaştırma tamamlandı."; _hata = false;
+            Toast.Basari("Karşılaştırma tamamlandı.");
             await Yukle();
         }
-        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+        catch (Exception ex) { Toast.Hata(ex.Message); }
     }
 
     private async Task EkipGrubuDialogAc()
@@ -325,8 +320,8 @@ else
 
     private async Task EkipGrubuKaydet()
     {
-        if (string.IsNullOrWhiteSpace(_grupAdi)) { _mesaj = "Grup adı zorunludur."; _hata = true; return; }
-        if (!_ekipSatirlari.Any()) { _mesaj = "En az bir ekip gerekli."; _hata = true; return; }
+        if (string.IsNullOrWhiteSpace(_grupAdi)) { Toast.Hata("Grup adı zorunludur."); return; }
+        if (!_ekipSatirlari.Any()) { Toast.Hata("En az bir ekip gerekli."); return; }
 
         var dto = new EkipGrubuAtaDto(_grupAdi,
             _ekipSatirlari.Select((e, i) => new EkipGrubuEkipAtaDto(e.EkipId, i + 1, e.Rol)));
@@ -335,10 +330,10 @@ else
         {
             await BolgeService.EkipGrubuAtaAsync(Id, dto);
             _ekipGrubuDialogAcik = false;
-            _mesaj = "Ekip grubu kaydedildi."; _hata = false;
+            Toast.Basari("Ekip grubu kaydedildi.");
             await Yukle();
         }
-        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+        catch (Exception ex) { Toast.Hata(ex.Message); }
     }
 
     private string OturumDurumCls(SayimOturumuDurum d) => d switch

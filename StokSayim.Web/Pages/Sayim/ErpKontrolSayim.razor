@@ -2,6 +2,7 @@
 @page "/erp-kontrol-sayim/{PlanId:int}"
 @attribute [Authorize]
 @inject IErpKontrolHttpService ErpKontrolService
+@inject ToastService Toast
 @inject ISayimPlaniHttpService PlanService
 @inject NavigationManager Nav
 
@@ -59,10 +60,6 @@ else
         </div>
     </div>
 
-    @if (!string.IsNullOrEmpty(_mesaj))
-    {
-        <div class="ss-alert @(_hata ? "ss-alert-danger" : "ss-alert-success")">@_mesaj</div>
-    }
 
     <div class="ss-card">
         <SfGrid DataSource="@_ekipDetay.Malzemeler.ToList()" AllowSorting="true" AllowFiltering="true">
@@ -167,8 +164,6 @@ else
 
     private bool _yukleniyor = true;
     private ErpKontrolEkipDetayDto? _ekipDetay;
-    private string _mesaj = "";
-    private bool _hata = false;
     private bool _tamamlaOnayDialogAcik = false;
     private bool _excelDialogAcik = false;
     private IBrowserFile? _seciliDosya;
@@ -234,10 +229,10 @@ else
                 await ErpKontrolService.MalzemeSayimGuncelleAsync(kv.Key, new ErpKontrolMalzemeSayimDto(kv.Key, kv.Value!.Value));
 
             await ErpKontrolService.EkipTamamlaAsync(_ekipDetay!.ErpKontrolEkipId);
-            _mesaj = "Sayım tamamlandı."; _hata = false;
+            Toast.Basari("Sayım tamamlandı.");
             await Yukle();
         }
-        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+        catch (Exception ex) { Toast.Hata(ex.Message); }
     }
 
     private void ExcelImportAc()
@@ -263,6 +258,6 @@ else
             if (_importSonuc?.Basarili == true)
                 await Yukle();
         }
-        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+        catch (Exception ex) { Toast.Hata(ex.Message); }
     }
 }

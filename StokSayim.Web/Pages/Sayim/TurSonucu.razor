@@ -1,6 +1,7 @@
 @page "/tur-sonucu/{TurId:int}"
 @attribute [Authorize(Roles = "Admin,SayimSorumlusu")]
 @inject ISayimOturumuHttpService OturumuService
+@inject ToastService Toast
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @using Syncfusion.Blazor.Grids
@@ -21,10 +22,6 @@ else
         <SfButton CssClass="e-outline" @onclick="Geri">← Geri</SfButton>
     </div>
 
-    @if (!string.IsNullOrEmpty(_mesaj))
-    {
-        <div class="ss-alert @(_hata ? "ss-alert-danger" : "ss-alert-success")">@_mesaj</div>
-    }
 
     <!-- Özet -->
     @if (_turSonucu != null)
@@ -270,7 +267,7 @@ else
                 _hata = true;
             }
         }
-        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+        catch (Exception ex) { Toast.Hata(ex.Message); }
         finally { _yukleniyor = false; }
     }
 
@@ -285,7 +282,7 @@ else
     private async Task ManuelKararKaydet()
     {
         if (_aktifDetay == null) return;
-        if (string.IsNullOrWhiteSpace(_kararGerekce)) { _mesaj = "Gerekçe zorunludur."; _hata = true; return; }
+        if (string.IsNullOrWhiteSpace(_kararGerekce)) { Toast.Hata("Gerekçe zorunludur."); return; }
 
         _kararYukleniyor = true;
         try
@@ -293,10 +290,10 @@ else
             var dto = new ManuelKararDto(_kararDeger, _kararGerekce);
             await OturumuService.ManuelKararVerAsync(_aktifDetay.Id, dto);
             _manuelDialogAcik = false;
-            _mesaj = "Karar kaydedildi."; _hata = false;
+            Toast.Basari("Karar kaydedildi.");
             await OnInitializedAsync();
         }
-        catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+        catch (Exception ex) { Toast.Hata(ex.Message); }
         finally { _kararYukleniyor = false; }
     }
 

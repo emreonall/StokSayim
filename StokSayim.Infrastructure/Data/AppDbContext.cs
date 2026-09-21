@@ -45,7 +45,7 @@ public class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
     {
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
         optionsBuilder.UseSqlServer(
-            "Server=172.17.3.50\\SQLEXPRESS;Database=StokSayimDb;User Id=emre.onal;Password=K0p@s.22;MultipleActiveResultSets=true;TrustServerCertificate=True",
+            "Server=172.17.3.50\\SQLEXPRESS;Database=StokSayimDb;User Id=emre.onal;Password=Kopas!123;MultipleActiveResultSets=true;TrustServerCertificate=True",
          b => b.MigrationsAssembly("StokSayim.Infrastructure"));
         DbContextOptions<AppDbContext> options = optionsBuilder.Options;
         return new AppDbContext(options);

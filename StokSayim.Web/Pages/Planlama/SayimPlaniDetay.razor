@@ -127,7 +127,7 @@ else
                                         <div style="font-size:12px; color:var(--muted)">Son import: @_plan.ErpImportTarihi.Value.ToString("dd.MM.yyyy HH:mm")</div>
                                     }
                                 </div>
-                                @if (_plan.Durum == SayimPlaniDurum.Taslak)
+                                @if (_plan.Durum == SayimPlaniDurum.Taslak || _plan.Durum == SayimPlaniDurum.Aktif || _plan.Durum == SayimPlaniDurum.SayimTamamlandi)
                                 {
                                     <hr class="ss-divider" />
                                     <AuthorizeView Roles="Admin,SayimSorumlusu">

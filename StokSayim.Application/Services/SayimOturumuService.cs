@@ -140,11 +140,12 @@ public class SayimOturumuService : ISayimOturumuService
                 yeniTur.Katilimcilar.Add(katilimci);
             }
 
-            // Bildirimi işle
-            var bekleyenBildirim = await _uow.GorevBildirimleri
-                .FirstOrDefaultAsync(b => b.SayimOturumuId == oturumuId && b.Durum == GorevBildirimDurum.Beklemede, ct);
+            // Bu oturumun bekleyen "Kontrol sayımı gerekli" bildirimlerinin TAMAMINI işle
+            // (tekrarlanan karşılaştırmalarda aynı oturum için birden fazla bildirim oluşmuş olabilir)
+            var bekleyenBildirimler = await _uow.GorevBildirimleri
+                .GetBekleyenlerByOturumAsync(oturumuId, GorevBildirimTipi.KontrolSayimiGerekli, ct);
 
-            if (bekleyenBildirim != null)
+            foreach (var bekleyenBildirim in bekleyenBildirimler)
             {
                 bekleyenBildirim.Durum = GorevBildirimDurum.Islendi;
                 bekleyenBildirim.IslemTarihi = DateTime.UtcNow;
@@ -287,6 +288,11 @@ public class SayimOturumuService : ISayimOturumuService
         var erpStoklar = (await _uow.ErpStoklar.GetByPlanIdAsync(planId, ct))
             .SadecePlanDepolari(plan.DepoKodlari);
 
+        // ERP stoğu olmadan karşılaştırma anlamsızdır (tüm malzemeler "ERP = 0" görünür)
+        if (erpStoklar.Count == 0)
+            throw new InvalidOperationException(
+                "Plana ERP stoğu aktarılmamış. ERP karşılaştırması başlatılmadan önce plan detay sayfasından ERP stoklarını aktarın.");
+
         // Fiili sayım: TÜM bölgelerin kesinleşen (onaylanan) sayım miktarları.
         // Bölgenin kesin sonucu ilk ekip karşılaştırma turunun sonucudur; kontrol turları
         // ve manuel kararlar da aynı TurSonucu üzerine yazılır.
@@ -377,30 +383,62 @@ public class SayimOturumuService : ISayimOturumuService
 
             ekipKayitlari.TryGetValue(EkipRolu.Kontrol, out var kontrolDetaylar);
 
-            decimal? Miktar3(string malzemeKodu, string? lotNo) =>
-                kontrolDetaylar == null ? null :
-                kontrolDetaylar.Where(d => d.MalzemeKodu == malzemeKodu && d.LotNo == lotNo)
-                               .Sum(d => d.SayilanMiktar);
+            // Bu kontrol turunda SAYILAN miktarlar (malzeme kodu + lot bazında).
+            // Not: kontrol ekibi genelde sadece fark olan malzemeleri sayar; sayılmayan malzeme "0 sayıldı" DEĞİLDİR.
+            var kontrolMiktarlari = (kontrolDetaylar ?? new List<SayimKaydiDetay>())
+                .GroupBy(d => (Kod: d.MalzemeKodu.Trim().ToUpperInvariant(), Lot: d.LotNo ?? string.Empty))
+                .ToDictionary(g => g.Key, g => g.Sum(d => d.SayilanMiktar));
 
-            var farkVar3 = false;
+            // Önceki kontrol turlarında sayılan miktarlar (malzeme + lot bazında).
+            // 2. ve sonraki kontrol sayımları, ekiplerden biriyle VEYA önceki kontrol sayımıyla eşleşirse kesinleşir.
+            // (Sadece TurNo'su küçük olan kontrol turları alınır; aynı tur yeniden hesaplansa bile kendi kendiyle eşleşmez.)
+            var oncekiKontrolMiktarlari = new Dictionary<(string Kod, string Lot), HashSet<decimal>>();
+            foreach (var oncekiTur in karsilastirmaOturumu.SayimTurlari
+                         .Where(t => t.TurTipi == SayimTuruTip.EkipKontrol && t.TurNo < tur.TurNo))
+            {
+                var oncekiKayitlar = await _uow.SayimKayitlari.GetByTurIdAsync(oncekiTur.Id, ct);
+                var oncekiToplamlar = oncekiKayitlar
+                    .Where(k => k.EkipRolu == EkipRolu.Kontrol)
+                    .SelectMany(k => k.Detaylar)
+                    .GroupBy(d => (Kod: d.MalzemeKodu.Trim().ToUpperInvariant(), Lot: d.LotNo ?? string.Empty))
+                    .Select(g => (Anahtar: g.Key, Miktar: g.Sum(d => d.SayilanMiktar)));
+
+                foreach (var (anahtar, miktar) in oncekiToplamlar)
+                {
+                    if (!oncekiKontrolMiktarlari.TryGetValue(anahtar, out var kume))
+                    {
+                        kume = new HashSet<decimal>();
+                        oncekiKontrolMiktarlari[anahtar] = kume;
+                    }
+                    kume.Add(miktar);
+                }
+            }
+
             foreach (var detay in mevcutSonuc.Detaylar)
             {
-                // Manuel karar verilmişse dokunma
-                if (detay.KararTipi == KararTipi.Manuel) continue;
+                // Daha önce kesinleşmiş satırlara (önceki kontrol turunda ekiplerden biriyle eşleşenler,
+                // otomatik eşleşenler, manuel karar verilenler) dokunma
+                if (detay.Durum == TurSonucuDetayDurum.Eslesti || detay.KararTipi == KararTipi.Manuel) continue;
 
-                var deger3 = Miktar3(detay.MalzemeKodu, detay.LotNo);
+                // Bu kontrol turunda sayılmamış satır: önceki değerleri korunur, sıfır kabul edilmez
+                var anahtar = (Kod: detay.MalzemeKodu.Trim().ToUpperInvariant(), Lot: detay.LotNo ?? string.Empty);
+                if (!kontrolMiktarlari.TryGetValue(anahtar, out var deger3)) continue;
+
                 detay.Deger3 = deger3;
 
-                var eslesti = deger3.HasValue && (deger3 == detay.Deger1 || deger3 == detay.Deger2);
+                var oncekiKontrolIleEslesti = oncekiKontrolMiktarlari.TryGetValue(anahtar, out var oncekiler)
+                                              && oncekiler.Contains(deger3);
+                var eslesti = deger3 == detay.Deger1 || deger3 == detay.Deger2 || oncekiKontrolIleEslesti;
                 detay.Durum = eslesti ? TurSonucuDetayDurum.Eslesti : TurSonucuDetayDurum.FarkVar;
-                detay.Fark = eslesti ? 0 : (deger3.HasValue && detay.Deger1.HasValue ? deger3.Value - detay.Deger1.Value : null);
+                detay.Fark = eslesti ? 0 : (detay.Deger1.HasValue ? deger3 - detay.Deger1.Value : null);
                 detay.FarkYuzdesi = eslesti ? 0 : (detay.Fark.HasValue && detay.Deger1.HasValue && detay.Deger1.Value != 0
                     ? Math.Abs(detay.Fark.Value / detay.Deger1.Value * 100) : null);
                 detay.OnaylananDeger = eslesti ? deger3 : null;
                 detay.KararTipi = eslesti ? KararTipi.Otomatik : null;
-
-                if (!eslesti) farkVar3 = true;
             }
+
+            // Genel durum tüm satırlara göre belirlenir (bu turda sayılmayanlar dahil)
+            var farkVar3 = mevcutSonuc.Detaylar.Any(d => d.Durum == TurSonucuDetayDurum.FarkVar);
 
             mevcutSonuc.EslesilenSayisi = mevcutSonuc.Detaylar.Count(d => d.Durum == TurSonucuDetayDurum.Eslesti);
             mevcutSonuc.FarkliSayisi = mevcutSonuc.Detaylar.Count(d => d.Durum == TurSonucuDetayDurum.FarkVar);
@@ -503,6 +541,15 @@ public class SayimOturumuService : ISayimOturumuService
             oturum!.Durum = SayimOturumuDurum.Onaylandi;
         else
         {
+            // Aynı oturum için mükerrer bildirim oluşmasın: açık olanlar kapatılıp tek bildirim bırakılır
+            var mevcutBildirimler = await _uow.GorevBildirimleri.GetBekleyenlerByOturumAsync(
+                tur.SayimOturumuId, GorevBildirimTipi.KontrolSayimiGerekli, ct);
+            foreach (var mb in mevcutBildirimler)
+            {
+                mb.Durum = GorevBildirimDurum.Islendi;
+                mb.IslemTarihi = DateTime.UtcNow;
+            }
+
             var bildirim = new GorevBildirimi
             {
                 SayimOturumuId = tur.SayimOturumuId,

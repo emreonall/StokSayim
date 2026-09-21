@@ -2,6 +2,7 @@
 @attribute [Authorize(Roles = "Admin,SayimSorumlusu")]
 @inject ISayimOturumuHttpService OturumuService
 @inject ToastService Toast
+@inject BildirimSayaciService Sayac
 @inject IEkipHttpService EkipService
 @inject NavigationManager Nav
 
@@ -149,6 +150,8 @@ else
         try { _bildirimler = await OturumuService.GetBekleyenBildirimlerAsync(); }
         catch { }
         _yukleniyor = false;
+        // Sayfadaki liste güncellendi; menüdeki rozeti de anında güncelle
+        await Sayac.YenileAsync();
     }
 
     private async Task KontrolTuruAcDialog(GorevBildirimDto bildirim)

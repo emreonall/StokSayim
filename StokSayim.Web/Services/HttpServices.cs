@@ -156,7 +156,8 @@ public class SayimPlaniHttpService : ISayimPlaniHttpService
     public async Task<ErpImportSonucDto?> ImportErpAsync(int id, MultipartFormDataContent form)
     {
         var r = await _http.PostAsync($"api/sayimplani/{id}/erp-import", form);
-        return r.IsSuccessStatusCode ? await r.Content.ReadFromJsonAsync<ErpImportSonucDto>() : null;
+        await r.EnsureApiSuccessAsync();
+        return await r.Content.ReadFromJsonAsync<ErpImportSonucDto>();
     }
 }
 

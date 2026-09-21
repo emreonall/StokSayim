@@ -34,8 +34,8 @@ public class MalzemeService : IMalzemeService
         var ws = wb.Worksheets.Any(s => s.Name == "Malzeme_Import")
             ? wb.Worksheet("Malzeme_Import")
             : wb.Worksheets.First();
-        // Satır 1: bilgi başlığı, Satır 2: kolon adları, Satır 3: açıklamalar → Skip(3)
-        var satirlar = ws.RangeUsed()?.RowsUsed().Skip(3).ToList() ?? [];
+        // Başlık satırı (MalzemeKodu ...) ve varsa açıklama satırı otomatik atlanır; ilk veri satırı kaybolmaz
+        var satirlar = ExcelImportYardimci.VeriSatirlari(ws);
 
         foreach (var satir in satirlar)
         {

@@ -470,7 +470,7 @@ public class SayimKaydiService : ISayimKaydiService
             ? wb.Worksheet("OfflineKayit")
             : wb.Worksheets.First();
 
-        var satirlar = ws.RangeUsed()?.RowsUsed().Skip(3).ToList() ?? [];
+        var satirlar = ExcelImportYardimci.VeriSatirlari(ws);
         var hatalar = new List<string>();
         var eklenecekler = new List<SayimKaydiDetayEkleDto>();
         int hatali = 0;

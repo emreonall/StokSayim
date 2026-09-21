@@ -1,9 +1,11 @@
 @inherits LayoutComponentBase
+@implements IDisposable
 @inject NavigationManager Nav
 @inject IAuthHttpService AuthService
 @inject AuthenticationStateProvider AuthProvider
 @inject ISayimOturumuHttpService OturumuService
 @inject ToastService Toast
+@inject BildirimSayaciService Sayac
 
 <SfToast @ref="_toast" NewestOnTop="true" ShowProgressBar="true" Position="@_toastPos">
     <ToastTemplates>
@@ -39,9 +41,9 @@
             </NavLink>
             <NavLink class="ss-nav-item" href="/bekleyen-isler">
                 <span class="nav-icon">⚠️</span> Bekleyen İşler
-                @if (_bekleyenSayi > 0)
+                @if (Sayac.Sayi > 0)
                 {
-                    <span class="ss-nav-badge warn">@_bekleyenSayi</span>
+                    <span class="ss-nav-badge warn">@Sayac.Sayi</span>
                 }
             </NavLink>
             <AuthorizeView Roles="SayimEkibi,Admin,SayimSorumlusu">
@@ -96,7 +98,6 @@
 </div>
 
 @code {
-    private int _bekleyenSayi = 0;
     private System.Threading.Timer? _timer;
     private SfToast? _toast;
     private string _toastMesaj = "";
@@ -104,14 +105,22 @@
 
     protected override async Task OnInitializedAsync()
     {
-        Toast.OnMesaj += async mesaj => await MesajGoster(mesaj);
-        await YukleBeleyenler();
-        _timer = new System.Threading.Timer(async _ =>
-        {
-            await YukleBeleyenler();
-            await InvokeAsync(StateHasChanged);
-        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+        Toast.OnMesaj += ToastMesajiAlindi;
+        Sayac.OnDegisti += SayacDegisti;
+        Nav.LocationChanged += SayfaDegisti;
+
+        await Sayac.YenileAsync();
+        _timer = new System.Threading.Timer(async _ => await Sayac.YenileAsync(),
+            null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
     }
+
+    private void ToastMesajiAlindi(ToastMesaj mesaj) => _ = MesajGoster(mesaj);
+
+    // Rozet değişince menüyü yeniden çiz (zamanlayıcı ve sayfa içi işlemlerden gelebilir)
+    private void SayacDegisti() => _ = InvokeAsync(StateHasChanged);
+
+    // Her sayfa geçişinde rozeti anında yenile
+    private void SayfaDegisti(object? sender, LocationChangedEventArgs e) => _ = Sayac.YenileAsync();
 
     private async Task MesajGoster(ToastMesaj mesaj)
     {
@@ -137,16 +146,6 @@
         });
     }
 
-    private async Task YukleBeleyenler()
-    {
-        try
-        {
-            var bildirimler = await OturumuService.GetBekleyenBildirimlerAsync();
-            _bekleyenSayi = bildirimler.Count();
-        }
-        catch { }
-    }
-
     private async Task Cikis()
     {
         var provider = (JwtAuthStateProvider)AuthProvider;
@@ -156,7 +155,9 @@
 
     public void Dispose()
     {
-        Toast.OnMesaj -= async mesaj => await MesajGoster(mesaj);
+        Toast.OnMesaj -= ToastMesajiAlindi;
+        Sayac.OnDegisti -= SayacDegisti;
+        Nav.LocationChanged -= SayfaDegisti;
         _timer?.Dispose();
     }
 }

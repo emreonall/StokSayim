@@ -14,7 +14,8 @@ builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
 // API base URL
-builder.Services.AddScoped(sp => new HttpClient
+// 401 alındığında oturumu kapatıp giriş sayfasına yönlendiren handler ile
+builder.Services.AddScoped(sp => new HttpClient(new UnauthorizedHandler(sp) { InnerHandler = new HttpClientHandler() })
 {
     BaseAddress = new Uri(builder.Configuration["ApiBaseUrl"] ?? "https://localhost:7000/")
 });
@@ -39,5 +40,6 @@ builder.Services.AddScoped<IKullaniciHttpService, KullaniciHttpService>();
 builder.Services.AddScoped<MalzemeHttpService>();
 builder.Services.AddScoped<IErpKontrolHttpService, ErpKontrolHttpService>();
 builder.Services.AddScoped<ToastService>();
+builder.Services.AddScoped<BildirimSayaciService>();
 
 await builder.Build().RunAsync();

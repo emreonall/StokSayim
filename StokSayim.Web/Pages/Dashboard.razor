@@ -3,6 +3,7 @@
 @inject ISayimPlaniHttpService PlanService
 @inject ISayimOturumuHttpService OturumuService
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>Dashboard — Stok Sayım</PageTitle>
 
@@ -21,6 +22,13 @@
 @if (_yukleniyor)
 {
     <div class="ss-loading"><SfSpinner Visible="true" /> Yükleniyor...</div>
+}
+else if (!string.IsNullOrEmpty(_hataMesaji))
+{
+    <div class="ss-alert ss-alert-danger" style="display:flex; justify-content:space-between; align-items:center; gap:12px">
+        <span>Dashboard verileri yüklenemedi: @_hataMesaji</span>
+        <SfButton CssClass="e-outline" @onclick="Yukle">Tekrar Dene</SfButton>
+    </div>
 }
 else
 {
@@ -311,6 +319,8 @@ else
 
 @code {
     private bool _yukleniyor = true;
+    private string _hataMesaji = "";
+    private bool _duzenTetiklendi;
     private IEnumerable<SayimPlaniListDto> _planlar = [];
     private IEnumerable<GorevBildirimDto> _bildirimler = [];
     private List<DurumVeri> _durumVerisi = [];
@@ -323,11 +333,45 @@ else
     record DurumVeri(string Durum, int Sayi);
     record BolgeChartVeri(string Plan, int Yuzde);
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync() => await Yukle();
+
+    // SfDashboardLayout, panel boyutlarını ilk çizimde kap genişliğinden hesaplar. Veri yüklendikten sonra
+    // çizildiğinde genişliği yanlış (0) okuyabiliyor ve panellerin çoğu görünmüyor; pencere "resize" olayı
+    // (F12'ye basmak gibi) düzeni yeniden hesaplatıyor. Aynı olayı ilk çizimden sonra biz tetikliyoruz.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await Task.WhenAll(YuklePlanlar(), YukleBildirimler());
-        HazirlaChartVerisi();
-        _yukleniyor = false;
+        if (_yukleniyor || !string.IsNullOrEmpty(_hataMesaji) || _duzenTetiklendi) return;
+
+        _duzenTetiklendi = true;
+        try
+        {
+            await Task.Delay(100);
+            await JS.InvokeVoidAsync("eval", "window.dispatchEvent(new Event('resize'))");
+            await Task.Delay(500);
+            await JS.InvokeVoidAsync("eval", "window.dispatchEvent(new Event('resize'))");
+        }
+        catch { }
+    }
+
+    private async Task Yukle()
+    {
+        _yukleniyor = true;
+        _duzenTetiklendi = false;
+        _hataMesaji = "";
+        try
+        {
+            await Task.WhenAll(YuklePlanlar(), YukleBildirimler());
+            HazirlaChartVerisi();
+        }
+        catch (Exception ex)
+        {
+            // Hata olsa bile spinner sonsuza kadar dönmesin; mesaj gösterilir
+            _hataMesaji = ex.Message;
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
     }
 
     private async Task YuklePlanlar() => _planlar = await PlanService.GetAllAsync();

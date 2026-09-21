@@ -150,6 +150,12 @@ public class SayimPlaniService : ISayimPlaniService
         var plan = await _uow.SayimPlanlari.GetWithDetailsAsync(id, ct)
             ?? throw new KeyNotFoundException($"Plan bulunamadı: {id}");
 
+        // ERP stok; sayım başlamış olsa bile ERP karşılaştırması başlatılana kadar aktarılabilir/yenilenebilir.
+        // Karşılaştırma başladıktan sonra (sonuçlar o anki ERP stoğuna göre hesaplanır) ya da plan kapandıktan sonra değiştirilemez.
+        if (plan.Durum == SayimPlaniDurum.ErpKarsilastirmaAktif || plan.Durum == SayimPlaniDurum.Kapali)
+            throw new InvalidOperationException(
+                "ERP karşılaştırması başlatıldıktan sonra (veya plan kapandıktan sonra) ERP stok aktarılamaz.");
+
         var hatalar = new List<string>();
         var yeniKayitlar = new List<ErpStok>();
         var islenenSatir = 0;
@@ -166,9 +172,8 @@ public class SayimPlaniService : ISayimPlaniService
             var ws = wb.Worksheets.Any(s => s.Name == "ERP_Stok_Import")
                 ? wb.Worksheet("ERP_Stok_Import")
                 : wb.Worksheet(1);
-            // İlk satır başlık, ikinci satır açıklama — ikisini de atla
-            // Satır 1: bilgi başlığı, Satır 2: kolon adları, Satır 3: açıklamalar → Skip(3)
-            var satirlar = ws.RangeUsed()?.RowsUsed().Skip(3).ToList() ?? [];
+            // Başlık satırı (MalzemeKodu ...) ve varsa açıklama satırı otomatik atlanır; ilk veri satırı kaybolmaz
+            var satirlar = ExcelImportYardimci.VeriSatirlari(ws);
 
             foreach (var satir in satirlar)
             {

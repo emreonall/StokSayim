@@ -3,7 +3,6 @@
 @inject ISayimPlaniHttpService PlanService
 @inject ISayimOturumuHttpService OturumuService
 @inject NavigationManager Nav
-@inject IJSRuntime JS
 
 <PageTitle>Dashboard — Stok Sayım</PageTitle>
 
@@ -32,80 +31,92 @@ else if (!string.IsNullOrEmpty(_hataMesaji))
 }
 else
 {
-    <SfDashboardLayout CellSpacing="@_cellSpacing" Columns="6" CellAspectRatio="1.5f" AllowResizing="true">
-        <DashboardLayoutPanels>
+    <div class="dl-grid">
 
             <!-- Stat: Toplam Plan -->
-            <DashboardLayoutPanel Id="p-toplam" Row="0" Column="0" SizeX="1" SizeY="1">
-                <HeaderTemplate><div class="dl-panel-header">📋 Toplam Plan</div></HeaderTemplate>
-                <ContentTemplate>
+            <div class="dl-card dl-span-1">
+                <div class="dl-card-header"><div class="dl-panel-header">📋 Toplam Plan</div></div>
+                <div class="dl-card-body dl-card-stat">
+
                     <div class="dl-stat primary">
                         <div class="dl-stat-value">@_planlar.Count()</div>
                         <div class="dl-stat-sub">@_planlar.Count(p => p.Durum == SayimPlaniDurum.Taslak) taslak</div>
                     </div>
-                </ContentTemplate>
-            </DashboardLayoutPanel>
+                
+                </div>
+            </div>
 
             <!-- Stat: Aktif -->
-            <DashboardLayoutPanel Id="p-aktif" Row="0" Column="1" SizeX="1" SizeY="1">
-                <HeaderTemplate><div class="dl-panel-header">▶️ Aktif Plan</div></HeaderTemplate>
-                <ContentTemplate>
+            <div class="dl-card dl-span-1">
+                <div class="dl-card-header"><div class="dl-panel-header">▶️ Aktif Plan</div></div>
+                <div class="dl-card-body dl-card-stat">
+
                     <div class="dl-stat accent">
                         <div class="dl-stat-value">@_planlar.Count(p => p.Durum == SayimPlaniDurum.Aktif)</div>
                         <div class="dl-stat-sub">devam ediyor</div>
                     </div>
-                </ContentTemplate>
-            </DashboardLayoutPanel>
+                
+                </div>
+            </div>
 
             <!-- Stat: Bekleyen -->
-            <DashboardLayoutPanel Id="p-bekleyen" Row="0" Column="2" SizeX="1" SizeY="1">
-                <HeaderTemplate><div class="dl-panel-header">⚠️ Bekleyen İş</div></HeaderTemplate>
-                <ContentTemplate>
+            <div class="dl-card dl-span-1">
+                <div class="dl-card-header"><div class="dl-panel-header">⚠️ Bekleyen İş</div></div>
+                <div class="dl-card-body dl-card-stat">
+
                     <div class="dl-stat @(_bildirimler.Any() ? "warn" : "success")" style="cursor:pointer"
                          @onclick="@(() => Nav.NavigateTo("/bekleyen-isler"))">
                         <div class="dl-stat-value">@_bildirimler.Count()</div>
                         <div class="dl-stat-sub">@(_bildirimler.Any() ? "işlem gerekiyor" : "temiz ✓")</div>
                     </div>
-                </ContentTemplate>
-            </DashboardLayoutPanel>
+                
+                </div>
+            </div>
 
             <!-- Stat: Tamamlanan -->
-            <DashboardLayoutPanel Id="p-tamam" Row="0" Column="3" SizeX="1" SizeY="1">
-                <HeaderTemplate><div class="dl-panel-header">✅ Tamamlanan</div></HeaderTemplate>
-                <ContentTemplate>
+            <div class="dl-card dl-span-1">
+                <div class="dl-card-header"><div class="dl-panel-header">✅ Tamamlanan</div></div>
+                <div class="dl-card-body dl-card-stat">
+
                     <div class="dl-stat success">
                         <div class="dl-stat-value">@_planlar.Count(p => p.Durum == SayimPlaniDurum.Kapali)</div>
                         <div class="dl-stat-sub">plan kapatıldı</div>
                     </div>
-                </ContentTemplate>
-            </DashboardLayoutPanel>
+                
+                </div>
+            </div>
 
             <!-- Stat: ERP -->
-            <DashboardLayoutPanel Id="p-erp" Row="0" Column="4" SizeX="1" SizeY="1">
-                <HeaderTemplate><div class="dl-panel-header">📊 ERP Karş.</div></HeaderTemplate>
-                <ContentTemplate>
+            <div class="dl-card dl-span-1">
+                <div class="dl-card-header"><div class="dl-panel-header">📊 ERP Karş.</div></div>
+                <div class="dl-card-body dl-card-stat">
+
                     <div class="dl-stat erp">
                         <div class="dl-stat-value">@_planlar.Count(p => p.Durum == SayimPlaniDurum.ErpKarsilastirmaAktif)</div>
                         <div class="dl-stat-sub">aktif</div>
                     </div>
-                </ContentTemplate>
-            </DashboardLayoutPanel>
+                
+                </div>
+            </div>
 
             <!-- Stat: İptal -->
-            <DashboardLayoutPanel Id="p-iptal" Row="0" Column="5" SizeX="1" SizeY="1">
-                <HeaderTemplate><div class="dl-panel-header">🚫 İptal</div></HeaderTemplate>
-                <ContentTemplate>
+            <div class="dl-card dl-span-1">
+                <div class="dl-card-header"><div class="dl-panel-header">🚫 İptal</div></div>
+                <div class="dl-card-body dl-card-stat">
+
                     <div class="dl-stat danger">
                         <div class="dl-stat-value">@_planlar.Count(p => p.Durum == SayimPlaniDurum.Iptal)</div>
                         <div class="dl-stat-sub">iptal edildi</div>
                     </div>
-                </ContentTemplate>
-            </DashboardLayoutPanel>
+                
+                </div>
+            </div>
 
             <!-- Pie Chart: Durum Dağılımı -->
-            <DashboardLayoutPanel Id="p-pie" Row="1" Column="0" SizeX="2" SizeY="2">
-                <HeaderTemplate><div class="dl-panel-header">🥧 Plan Durum Dağılımı</div></HeaderTemplate>
-                <ContentTemplate>
+            <div class="dl-card dl-span-2">
+                <div class="dl-card-header"><div class="dl-panel-header">🥧 Plan Durum Dağılımı</div></div>
+                <div class="dl-card-body dl-card-tall">
+
                     @if (_durumVerisi.Any())
                     {
                         <SfAccumulationChart EnableAnimation="true" Background="transparent" Height="100%">
@@ -129,13 +140,15 @@ else
                     {
                         <div class="ss-empty"><div class="ss-empty-icon">📊</div><div class="ss-empty-text">Veri yok</div></div>
                     }
-                </ContentTemplate>
-            </DashboardLayoutPanel>
+                
+                </div>
+            </div>
 
             <!-- Bar Chart: Bölge Tamamlanma -->
-            <DashboardLayoutPanel Id="p-bar" Row="1" Column="2" SizeX="2" SizeY="2">
-                <HeaderTemplate><div class="dl-panel-header">📈 Bölge Tamamlanma (%)</div></HeaderTemplate>
-                <ContentTemplate>
+            <div class="dl-card dl-span-2">
+                <div class="dl-card-header"><div class="dl-panel-header">📈 Bölge Tamamlanma (%)</div></div>
+                <div class="dl-card-body dl-card-tall">
+
                     @if (_bolgeChartVerisi.Any())
                     {
                         <SfChart Background="transparent" Height="100%">
@@ -163,13 +176,15 @@ else
                     {
                         <div class="ss-empty"><div class="ss-empty-icon">📈</div><div class="ss-empty-text">Aktif plan yok</div></div>
                     }
-                </ContentTemplate>
-            </DashboardLayoutPanel>
+                
+                </div>
+            </div>
 
             <!-- Aktif Planlar İlerleme -->
-            <DashboardLayoutPanel Id="p-ilerleme" Row="1" Column="4" SizeX="2" SizeY="2">
-                <HeaderTemplate><div class="dl-panel-header">🗺️ Aktif Plan İlerlemeleri</div></HeaderTemplate>
-                <ContentTemplate>
+            <div class="dl-card dl-span-2">
+                <div class="dl-card-header"><div class="dl-panel-header">🗺️ Aktif Plan İlerlemeleri</div></div>
+                <div class="dl-card-body dl-card-tall">
+
                     @{
                         var aktif = _planlar.Where(p => p.Durum == SayimPlaniDurum.Aktif).ToList();
                     }
@@ -200,22 +215,22 @@ else
                             }
                         </div>
                     }
-                </ContentTemplate>
-            </DashboardLayoutPanel>
+                
+                </div>
+            </div>
 
             <!-- Bekleyen İşler Listesi -->
-            <DashboardLayoutPanel Id="p-bekleyen-liste" Row="3" Column="0" SizeX="3" SizeY="2">
-                <HeaderTemplate>
-                    <div class="dl-panel-header" style="display:flex; justify-content:space-between; width:100%">
+            <div class="dl-card dl-span-3">
+                <div class="dl-card-header"><div class="dl-panel-header" style="display:flex; justify-content:space-between; width:100%">
                         <span>⚠️ Bekleyen İşler</span>
                         @if (_bildirimler.Any())
                         {
                             <SfButton CssClass="e-small e-flat"
                                       @onclick="@(() => Nav.NavigateTo("/bekleyen-isler"))">Tümü →</SfButton>
                         }
-                    </div>
-                </HeaderTemplate>
-                <ContentTemplate>
+                    </div></div>
+                <div class="dl-card-body dl-card-tall">
+
                     @if (!_bildirimler.Any())
                     {
                         <div class="ss-empty" style="padding:20px">
@@ -244,20 +259,20 @@ else
                             }
                         </div>
                     }
-                </ContentTemplate>
-            </DashboardLayoutPanel>
+                
+                </div>
+            </div>
 
             <!-- Son Planlar Grid -->
-            <DashboardLayoutPanel Id="p-planlar-grid" Row="3" Column="3" SizeX="3" SizeY="2">
-                <HeaderTemplate>
-                    <div class="dl-panel-header" style="display:flex; justify-content:space-between; width:100%">
+            <div class="dl-card dl-span-3">
+                <div class="dl-card-header"><div class="dl-panel-header" style="display:flex; justify-content:space-between; width:100%">
                         <span>📋 Tüm Planlar</span>
                         <SfButton CssClass="e-small e-flat"
                                   @onclick="@(() => Nav.NavigateTo("/sayim-planlari"))">Tümü →</SfButton>
-                    </div>
-                </HeaderTemplate>
-                <ContentTemplate>
-                    <SfGrid DataSource="@_planlar.Take(8).ToList()" AllowSorting="true" Height="100%">
+                    </div></div>
+                <div class="dl-card-body dl-card-tall">
+
+                    <SfGrid DataSource="@_planlar.Take(8).ToList()" AllowSorting="true" Height="280">
                         <GridColumns>
                             <GridColumn Field="PlanAdi" HeaderText="Plan Adı" />
                             <GridColumn HeaderText="Durum" Width="120">
@@ -280,11 +295,11 @@ else
                             </GridColumn>
                         </GridColumns>
                     </SfGrid>
-                </ContentTemplate>
-            </DashboardLayoutPanel>
+                
+                </div>
+            </div>
 
-        </DashboardLayoutPanels>
-    </SfDashboardLayout>
+    </div>
 }
 
 <style>
@@ -309,24 +324,48 @@ else
     }
     .dl-notif-row:last-child { border-bottom: none; }
 
-    .e-dashboard-layout .e-panel {
-        border: 1px solid var(--border) !important;
-        border-radius: 10px !important;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.06) !important;
+    /* Dashboard: SfDashboardLayout yerine sade CSS grid (boyut hesaplama sorunları olmasın diye) */
+    .dl-grid {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 16px;
     }
-    .e-dashboard-layout .e-panel .e-panel-container { padding: 8px 12px 12px; }
+    .dl-span-1 { grid-column: span 1; }
+    .dl-span-2 { grid-column: span 2; }
+    .dl-span-3 { grid-column: span 3; }
+
+    .dl-card {
+        background: var(--surface, #fff);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+        display: flex; flex-direction: column;
+        min-width: 0; overflow: hidden;
+    }
+    .dl-card-header { padding: 12px 16px 6px; }
+    .dl-card-body   { padding: 4px 12px 12px; flex: 1; min-height: 0; }
+    .dl-card-stat   { height: 110px; flex: none; }
+    .dl-card-tall   { height: 300px; flex: none; }
+
+    @@media (max-width: 1200px) {
+        .dl-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .dl-span-2 { grid-column: span 3; }
+        .dl-span-3 { grid-column: span 3; }
+    }
+    @@media (max-width: 700px) {
+        .dl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .dl-span-2, .dl-span-3 { grid-column: span 2; }
+    }
 </style>
 
 @code {
     private bool _yukleniyor = true;
     private string _hataMesaji = "";
-    private bool _duzenTetiklendi;
     private IEnumerable<SayimPlaniListDto> _planlar = [];
     private IEnumerable<GorevBildirimDto> _bildirimler = [];
     private List<DurumVeri> _durumVerisi = [];
     private List<BolgeChartVeri> _bolgeChartVerisi = [];
 
-    private double[] _cellSpacing = [10, 10];
     private string[] _palette = ["#1e3a5f", "#0d9488", "#d97706", "#6d28d9", "#15803d", "#dc2626"];
     private ChartCornerRadius _cornerRadius = new() { TopLeft = 4, TopRight = 4 };
 
@@ -335,28 +374,9 @@ else
 
     protected override async Task OnInitializedAsync() => await Yukle();
 
-    // SfDashboardLayout, panel boyutlarını ilk çizimde kap genişliğinden hesaplar. Veri yüklendikten sonra
-    // çizildiğinde genişliği yanlış (0) okuyabiliyor ve panellerin çoğu görünmüyor; pencere "resize" olayı
-    // (F12'ye basmak gibi) düzeni yeniden hesaplatıyor. Aynı olayı ilk çizimden sonra biz tetikliyoruz.
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (_yukleniyor || !string.IsNullOrEmpty(_hataMesaji) || _duzenTetiklendi) return;
-
-        _duzenTetiklendi = true;
-        try
-        {
-            await Task.Delay(100);
-            await JS.InvokeVoidAsync("eval", "window.dispatchEvent(new Event('resize'))");
-            await Task.Delay(500);
-            await JS.InvokeVoidAsync("eval", "window.dispatchEvent(new Event('resize'))");
-        }
-        catch { }
-    }
-
     private async Task Yukle()
     {
         _yukleniyor = true;
-        _duzenTetiklendi = false;
         _hataMesaji = "";
         try
         {

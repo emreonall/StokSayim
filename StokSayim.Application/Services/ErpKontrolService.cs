@@ -18,7 +18,10 @@ public class ErpKontrolService : IErpKontrolService
 
     public async Task<IEnumerable<ErpKontrolAtamaDto>> GetAtamaListesiAsync(int planId, CancellationToken ct = default)
     {
-        var erpStoklar = (await _uow.ErpStoklar.GetByPlanIdAsync(planId, ct)).ToList();
+        var plan = await _uow.SayimPlanlari.GetWithDetailsAsync(planId, ct)
+            ?? throw new KeyNotFoundException($"Plan bulunamadı: {planId}");
+        // ERP miktarı: sadece plan depo kodlarındaki stoklar
+        var erpStoklar = (await _uow.ErpStoklar.GetByPlanIdAsync(planId, ct)).SadecePlanDepolari(plan.DepoKodlari);
         var oturumlar = (await _uow.SayimOturumlari.GetByPlanIdAsync(planId, ct)).ToList();
 
         // Fiili sayım sonuçlarını topla (malzeme kodu bazında)
@@ -111,6 +114,14 @@ public class ErpKontrolService : IErpKontrolService
 
     public async Task<ErpKontrolOturumuDto> BaslatAsync(int planId, ErpKontrolBaslatDto request, string kullaniciId, CancellationToken ct = default)
     {
+        // ERP kontrol sayımı tek turdur ve zorunludur: fark olan TÜM malzemelere kontrol ekibi atanmalıdır.
+        var farkMalzemeleri = (await GetAtamaListesiAsync(planId, ct)).Select(a => a.MalzemeKodu).ToList();
+        var atananlar = request.EkipAtamalari.SelectMany(e => e.MalzemeKodlari).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var atanmayan = farkMalzemeleri.Count(k => !atananlar.Contains(k));
+        if (atanmayan > 0)
+            throw new InvalidOperationException(
+                $"{atanmayan} fark malzemesine kontrol ekibi atanmamış. ERP kontrol sayımı tüm fark malzemeleri için yapılmalıdır.");
+
         // Önceki oturum varsa sil (yeniden atama senaryosu)
         var mevcutOturum = await _uow.ErpKontrolOturumlari.GetByPlanIdAsync(planId, ct);
         if (mevcutOturum != null)
@@ -261,7 +272,124 @@ public class ErpKontrolService : IErpKontrolService
             // Plan kapanışı manuel — SayimSorumlusu sonuçları inceleyip kapatır
         }
 
+        // Kontrol sayımını ERP karşılaştırma turu sonucuna (Deger3) işle:
+        //  - kontrol sayımı ERP ile eşleşirse satır otomatik çözülür,
+        //  - eşleşmezse satır "Fark Var" kalır ve manuel karar beklenir.
+        var erpTuru = await GetErpTuruAsync(oturum.SayimPlaniId, ct);
+        if (erpTuru?.TurSonucu != null)
+        {
+            var detaylar = erpTuru.TurSonucu.Detaylar.ToLookup(d => d.MalzemeKodu.Trim(), StringComparer.OrdinalIgnoreCase);
+            foreach (var m in ekip.Malzemeler)
+            {
+                foreach (var d in detaylar[m.MalzemeKodu.Trim()])
+                {
+                    d.Deger3 = m.SayilanMiktar;
+                    if (d.KararTipi == KararTipi.Manuel || !m.SayilanMiktar.HasValue) continue;
+
+                    var kontrol = m.SayilanMiktar.Value;
+                    var erp = d.Deger1 ?? 0;
+                    d.Fark = kontrol - erp;
+                    d.FarkYuzdesi = erp != 0 ? Math.Abs((kontrol - erp) / erp * 100) : null;
+
+                    if (kontrol == erp)
+                    {
+                        d.Durum = TurSonucuDetayDurum.Eslesti;
+                        d.OnaylananDeger = kontrol;
+                        d.KararTipi = KararTipi.Otomatik;
+                    }
+                }
+            }
+            ErpTuruDurumunuGuncelle(erpTuru);
+        }
+
         await _uow.SaveChangesAsync(ct);
+    }
+
+    // ─── ERP kontrol sonrası manuel karar ─────────────────────────────────────
+
+    public async Task ManuelKararVerAsync(int planId, ErpKontrolManuelKararDto request, string kullaniciId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.Gerekce))
+            throw new InvalidOperationException("Gerekçe zorunludur.");
+
+        var plan = await _uow.SayimPlanlari.GetByIdAsync(planId, ct)
+            ?? throw new KeyNotFoundException($"Plan bulunamadı: {planId}");
+        if (plan.Durum == SayimPlaniDurum.Kapali)
+            throw new InvalidOperationException("Kapalı planda karar verilemez.");
+
+        var oturum = await _uow.ErpKontrolOturumlari.GetByPlanIdAsync(planId, ct)
+            ?? throw new InvalidOperationException("ERP kontrol sayımı başlatılmamış. Karar vermeden önce ERP kontrol sayımı yapılmalıdır.");
+
+        var kod = request.MalzemeKodu.Trim();
+        var kontrolTamamlandi = oturum.Ekipler
+            .Where(e => e.Durum == ErpKontrolEkipDurum.Tamamlandi)
+            .SelectMany(e => e.Malzemeler)
+            .Any(m => string.Equals(m.MalzemeKodu.Trim(), kod, StringComparison.OrdinalIgnoreCase));
+        if (!kontrolTamamlandi)
+            throw new InvalidOperationException($"'{kod}' için ERP kontrol sayımı henüz tamamlanmamış.");
+
+        var erpTuru = await GetErpTuruAsync(planId, ct)
+            ?? throw new InvalidOperationException("ERP karşılaştırma sonucu bulunamadı.");
+
+        var detay = erpTuru.TurSonucu!.Detaylar
+            .FirstOrDefault(d => string.Equals(d.MalzemeKodu.Trim(), kod, StringComparison.OrdinalIgnoreCase))
+            ?? throw new KeyNotFoundException($"ERP karşılaştırma sonucunda '{kod}' bulunamadı.");
+
+        if (detay.Durum == TurSonucuDetayDurum.Eslesti && detay.KararTipi != KararTipi.Manuel)
+            throw new InvalidOperationException($"'{kod}' için fark yok, karar gerekmiyor.");
+
+        if (detay.ManuelKarar != null)
+        {
+            // Mevcut kararı güncelle
+            detay.ManuelKarar.KararVerilenDeger = request.KararVerilenDeger;
+            detay.ManuelKarar.Gerekce = request.Gerekce.Trim();
+            detay.ManuelKarar.KararVerenKullaniciId = kullaniciId;
+            detay.ManuelKarar.KararTarihi = DateTime.UtcNow;
+        }
+        else
+        {
+            detay.ManuelKarar = new ManuelKarar
+            {
+                SayimTuruId = erpTuru.Id,
+                MalzemeKodu = detay.MalzemeKodu,
+                LotNo = null,
+                KararVerilenDeger = request.KararVerilenDeger,
+                Gerekce = request.Gerekce.Trim(),
+                KararVerenKullaniciId = kullaniciId,
+                KararTarihi = DateTime.UtcNow,
+                OlusturanKullaniciId = kullaniciId
+            };
+        }
+
+        detay.OnaylananDeger = request.KararVerilenDeger;
+        detay.KararTipi = KararTipi.Manuel;
+        detay.Durum = TurSonucuDetayDurum.Eslesti;
+
+        ErpTuruDurumunuGuncelle(erpTuru);
+        await _uow.SaveChangesAsync(ct);
+    }
+
+    // ─── ERP karşılaştırma turu (plan geneli) yardımcıları ────────────────────
+
+    private async Task<SayimTuru?> GetErpTuruAsync(int planId, CancellationToken ct)
+    {
+        var oturumlar = await _uow.SayimOturumlari.GetByPlanIdAsync(planId, ct);
+        return oturumlar
+            .SelectMany(o => o.SayimTurlari)
+            .Where(t => t.TurTipi == SayimTuruTip.ErpKarsilastirma && t.TurSonucu != null)
+            .OrderByDescending(t => t.Id)
+            .FirstOrDefault();
+    }
+
+    private static void ErpTuruDurumunuGuncelle(SayimTuru tur)
+    {
+        var sonuc = tur.TurSonucu!;
+        sonuc.EslesilenSayisi = sonuc.Detaylar.Count(d => d.Durum == TurSonucuDetayDurum.Eslesti);
+        sonuc.FarkliSayisi = sonuc.Detaylar.Count(d => d.Durum == TurSonucuDetayDurum.FarkVar);
+        var cozuldu = sonuc.FarkliSayisi == 0;
+        sonuc.GenelDurum = cozuldu ? SayimTuruDurum.Onaylandi : SayimTuruDurum.FarkVar;
+        tur.Durum = sonuc.GenelDurum;
+        tur.KapanmaTarihi = cozuldu ? DateTime.UtcNow : null;
     }
 
     // ─── Planı manuel kapat (SayimSorumlusu) ──────────────────────────────────
@@ -269,6 +397,24 @@ public class ErpKontrolService : IErpKontrolService
     public async Task PlaniKapatAsync(int planId, string kullaniciId, CancellationToken ct = default)
     {
         var oturum = await _uow.ErpKontrolOturumlari.GetByPlanIdAsync(planId, ct);
+
+        // ERP karşılaştırmasında fark varsa ERP kontrol sayımı zorunludur ve farklar karara bağlanmış olmalıdır.
+        var erpTuru = await GetErpTuruAsync(planId, ct);
+        var cozulmemis = erpTuru?.TurSonucu?.Detaylar.Where(d => d.Durum == TurSonucuDetayDurum.FarkVar).ToList()
+                         ?? new List<TurSonucuDetay>();
+        if (cozulmemis.Count > 0)
+        {
+            if (oturum == null)
+                throw new InvalidOperationException(
+                    $"ERP karşılaştırmasında {cozulmemis.Count} malzemede fark var. Plan kapatılmadan önce ERP kontrol sayımı yapılmalıdır.");
+
+            var kontrolsuz = cozulmemis.Count(d => !d.Deger3.HasValue);
+            if (kontrolsuz > 0)
+                throw new InvalidOperationException($"{kontrolsuz} fark malzemesinde ERP kontrol sayımı tamamlanmamış.");
+
+            throw new InvalidOperationException(
+                $"ERP kontrol sayımı sonrası {cozulmemis.Count} malzemede fark sürüyor. Bu malzemeler için manuel karar verilmelidir.");
+        }
 
         if (oturum != null)
         {
@@ -289,8 +435,8 @@ public class ErpKontrolService : IErpKontrolService
         plan.Durum = SayimPlaniDurum.Kapali;
         _uow.SayimPlanlari.Update(plan);
         await _uow.SaveChangesAsync(ct);
-    
-    await _uow.SaveChangesAsync(ct);
+
+        await _uow.SaveChangesAsync(ct);
     }
 
     // ─── Final sonuçlar ───────────────────────────────────────────────────────
@@ -300,7 +446,10 @@ public class ErpKontrolService : IErpKontrolService
         var oturum = await _uow.ErpKontrolOturumlari.GetByPlanIdAsync(planId, ct);
         if (oturum == null) return [];
 
+        var planDepolari = (await _uow.SayimPlanlari.GetWithDetailsAsync(planId, ct))?.DepoKodlari
+            ?? new List<SayimPlanDepoKodu>();
         var erpStoklar = (await _uow.ErpStoklar.GetByPlanIdAsync(planId, ct))
+            .SadecePlanDepolari(planDepolari)
             .GroupBy(e => e.MalzemeKodu)
             .ToDictionary(g => g.Key, g => g.Sum(e => e.Miktar));
 

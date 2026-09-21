@@ -106,6 +106,7 @@ public class SayimOturumuRepository : Repository<SayimOturumu>, ISayimOturumuRep
             .Include(x => x.SayimTurlari)
                 .ThenInclude(t => t.TurSonucu)
                     .ThenInclude(s => s!.Detaylar)
+                        .ThenInclude(d => d.ManuelKarar)
             .Where(x => x.SayimPlaniId == planId)
             .ToListAsync(ct);
 }

@@ -202,7 +202,7 @@ public class SayimPlaniService : ISayimPlaniService
                             System.Globalization.CultureInfo.InvariantCulture, out miktar))
                     {
                         // ClosedXML'den direkt numeric dene
-                        try { miktar = satir.Cell(4).GetValue<decimal>(); }
+                        try { miktar = satir.Cell(3).GetValue<decimal>(); }
                         catch
                         {
                             hataliSatir++;

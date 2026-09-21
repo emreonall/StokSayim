@@ -413,6 +413,7 @@ public interface IErpKontrolHttpService
     Task MalzemeSayimGuncelleAsync(int malzemeId, ErpKontrolMalzemeSayimDto request);
     Task EkipTamamlaAsync(int erpKontrolEkipId);
     Task PlaniKapatAsync(int planId);
+    Task ManuelKararVerAsync(int planId, ErpKontrolManuelKararDto request);
     Task<IEnumerable<ErpKontrolSonucDto>> GetSonuclarAsync(int planId);
     Task<ErpKontrolImportSonucDto?> ImportSayimAsync(int erpKontrolEkipId, MultipartFormDataContent form);
 }
@@ -428,11 +429,17 @@ public class ErpKontrolHttpService : IErpKontrolHttpService
     public async Task<ErpKontrolOturumuDto?> BaslatAsync(int planId, ErpKontrolBaslatDto request)
     {
         var r = await _http.PostAsJsonAsync($"api/erp-kontrol/plan/{planId}/baslat", request);
-        return r.IsSuccessStatusCode ? await r.Content.ReadFromJsonAsync<ErpKontrolOturumuDto>() : null;
+        await r.EnsureApiSuccessAsync();
+        return await r.Content.ReadFromJsonAsync<ErpKontrolOturumuDto>();
     }
 
     public async Task<ErpKontrolOturumuDto?> GetOturumuAsync(int planId)
-        => await _http.GetFromJsonAsync<ErpKontrolOturumuDto?>($"api/erp-kontrol/plan/{planId}");
+    {
+        // Henüz ERP kontrol oturumu yoksa API 404 döner; bu bir hata değil, "oturum yok" demektir.
+        var r = await _http.GetAsync($"api/erp-kontrol/plan/{planId}");
+        if (!r.IsSuccessStatusCode) return null;
+        return await r.Content.ReadFromJsonAsync<ErpKontrolOturumuDto>();
+    }
 
     public async Task<ErpKontrolEkipDetayDto?> GetEkipDetayAsync(int planId, int ekipId)
         => await _http.GetFromJsonAsync<ErpKontrolEkipDetayDto?>($"api/erp-kontrol/plan/{planId}/ekip/{ekipId}");
@@ -450,7 +457,16 @@ public class ErpKontrolHttpService : IErpKontrolHttpService
         => await _http.PostAsync($"api/erp-kontrol/ekip/{erpKontrolEkipId}/tamamla", null);
 
     public async Task PlaniKapatAsync(int planId)
-        => await _http.PostAsync($"api/erp-kontrol/plan/{planId}/kapat", null);
+    {
+        var r = await _http.PostAsync($"api/erp-kontrol/plan/{planId}/kapat", null);
+        await r.EnsureApiSuccessAsync();
+    }
+
+    public async Task ManuelKararVerAsync(int planId, ErpKontrolManuelKararDto request)
+    {
+        var r = await _http.PostAsJsonAsync($"api/erp-kontrol/plan/{planId}/manuel-karar", request);
+        await r.EnsureApiSuccessAsync();
+    }
 
     public async Task<IEnumerable<ErpKontrolSonucDto>> GetSonuclarAsync(int planId)
         => await _http.GetFromJsonAsync<IEnumerable<ErpKontrolSonucDto>>($"api/erp-kontrol/plan/{planId}/sonuclar") ?? [];

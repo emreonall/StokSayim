@@ -391,7 +391,8 @@ public class SayimKaydiController : ControllerBase
     [Authorize(Roles = "SayimEkibi,Admin,SayimSorumlusu")]
     public async Task<IActionResult> DetayEkle(int id, [FromBody] SayimKaydiDetayEkleDto request, CancellationToken ct)
     {
-        await _service.DetayEkleAsync(id, request, ct);
+        var kullaniciId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value;
+        await _service.DetayEkleAsync(id, request, kullaniciId, ct);
         return NoContent();
     }
 
@@ -399,7 +400,8 @@ public class SayimKaydiController : ControllerBase
     [Authorize(Roles = "SayimEkibi,Admin,SayimSorumlusu")]
     public async Task<IActionResult> DetayGuncelle(int detayId, [FromBody] SayimKaydiDetayEkleDto request, CancellationToken ct)
     {
-        await _service.DetayGuncelleAsync(detayId, request, ct);
+        var kullaniciId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value;
+        await _service.DetayGuncelleAsync(detayId, request, kullaniciId, ct);
         return NoContent();
     }
 
@@ -418,7 +420,8 @@ public class SayimKaydiController : ControllerBase
         if (detaylar == null || !detaylar.Any())
             return BadRequest(new { mesaj = "Detay listesi boş olamaz." });
 
-        var result = await _service.TopluDetayEkleAsync(id, detaylar, ct);
+        var kullaniciId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value;
+        var result = await _service.TopluDetayEkleAsync(id, detaylar, kullaniciId, ct);
         return Ok(result);
     }
 
@@ -573,6 +576,16 @@ public class ErpKontrolController : ControllerBase
     [Authorize(Roles = "Admin,SayimSorumlusu")]
     public async Task<IActionResult> GetSonuclar(int planId, CancellationToken ct) =>
         Ok(await _service.GetSonuclarAsync(planId, ct));
+
+    // ERP kontrol sayımı sonrası fark süren malzeme için manuel karar
+    [HttpPost("plan/{planId}/manuel-karar")]
+    [Authorize(Roles = "Admin,SayimSorumlusu")]
+    public async Task<IActionResult> ManuelKarar(int planId, [FromBody] ErpKontrolManuelKararDto request, CancellationToken ct)
+    {
+        var kullaniciId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value;
+        await _service.ManuelKararVerAsync(planId, request, kullaniciId, ct);
+        return NoContent();
+    }
 
     // Planı manuel kapat
     [HttpPost("plan/{planId}/kapat")]

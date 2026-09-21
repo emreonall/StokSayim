@@ -88,7 +88,10 @@ public class SayimOturumuService : ISayimOturumuService
 
     public async Task<IEnumerable<GorevBildirimDto>> GetBekleyenBildirimlerAsync(CancellationToken ct = default)
     {
-        var bildirimler = await _uow.GorevBildirimleri.GetBekleyenlerAsync(ct);
+        var bildirimler = (await _uow.GorevBildirimleri.GetBekleyenlerAsync(ct))
+            // ERP karşılaştırma bildirimleri artık bölge bazlı iş değildir (plan geneli, Raporlar sayfasından yönetilir)
+            .Where(b => b.BildirimTipi != GorevBildirimTipi.ErpKontrolGerekli
+                     && b.BildirimTipi != GorevBildirimTipi.ErpManuelKararGerekli);
         return bildirimler.Select(b => new GorevBildirimDto(
             Id: b.Id,
             SayimOturumuId: b.SayimOturumuId,
@@ -210,6 +213,10 @@ public class SayimOturumuService : ISayimOturumuService
 
         var detay = turSonucu.Detaylar.First(d => d.Id == turSonucuDetayId);
 
+        if (turSonucu.SayimTuru.TurTipi == SayimTuruTip.ErpKarsilastirma)
+            throw new InvalidOperationException(
+                "ERP karşılaştırma farklarında manuel karar, ERP kontrol sayımı tamamlandıktan sonra Raporlar sayfasından verilir.");
+
         // Karar kaydet
         var karar = new ManuelKarar
         {
@@ -265,7 +272,7 @@ public class SayimOturumuService : ISayimOturumuService
 
     public async Task ErpKarsilastirmaBaslatAsync(int planId, string kullaniciId, CancellationToken ct = default)
     {
-        var oturumlar = await _uow.SayimOturumlari.GetByPlanIdAsync(planId, ct);
+        var oturumlar = (await _uow.SayimOturumlari.GetByPlanIdAsync(planId, ct)).OrderBy(o => o.Id).ToList();
         var tamamlanmamisOturumlar = oturumlar.Where(o =>
             o.Durum != SayimOturumuDurum.Onaylandi &&
             o.Durum != SayimOturumuDurum.ManuelKarar).ToList();
@@ -273,25 +280,40 @@ public class SayimOturumuService : ISayimOturumuService
         if (tamamlanmamisOturumlar.Any())
             throw new InvalidOperationException($"{tamamlanmamisOturumlar.Count} bölgede sayım henüz tamamlanmamış.");
 
-        var erpStoklar = await _uow.ErpStoklar.GetByPlanIdAsync(planId, ct);
-
-        var plan = await _uow.SayimPlanlari.GetByIdAsync(planId, ct)
+        var plan = await _uow.SayimPlanlari.GetWithDetailsAsync(planId, ct)
             ?? throw new KeyNotFoundException($"Plan bulunamadı: {planId}");
+
+        // ERP miktarı: sadece sayım planındaki depo kodlarının (SayimPlanDepoKodlari) stokları
+        var erpStoklar = (await _uow.ErpStoklar.GetByPlanIdAsync(planId, ct))
+            .SadecePlanDepolari(plan.DepoKodlari);
+
+        // Fiili sayım: TÜM bölgelerin kesinleşen (onaylanan) sayım miktarları.
+        // Bölgenin kesin sonucu ilk ekip karşılaştırma turunun sonucudur; kontrol turları
+        // ve manuel kararlar da aynı TurSonucu üzerine yazılır.
+        var fiiliDetaylar = oturumlar
+            .Select(o => o.SayimTurlari
+                .Where(t => t.TurTipi == SayimTuruTip.EkipKarsilastirma && t.TurSonucu != null)
+                .OrderBy(t => t.TurNo)
+                .Select(t => t.TurSonucu!)
+                .FirstOrDefault())
+            .Where(sonuc => sonuc != null)
+            .SelectMany(sonuc => sonuc!.Detaylar)
+            .Where(d => d.OnaylananDeger.HasValue)
+            .ToList();
 
         await _uow.BeginTransactionAsync(ct);
         try
         {
-            foreach (var oturum in oturumlar)
+            // Karşılaştırma plan geneli tek sonuçtur; ilk bölgenin oturumu altında bir ERP turu olarak tutulur.
+            // (Sonuçları okuyan ekranlar oturum bazında topladığı için başka bölgelere tur açılmaz.)
+            var hedefOturum = oturumlar.FirstOrDefault();
+            if (hedefOturum != null)
             {
-                var sonTur = oturum.SayimTurlari.OrderByDescending(t => t.TurNo).First();
-                var sonSonuc = sonTur.TurSonucu;
-                if (sonSonuc == null) continue;
+                var erpTur = await YeniTurAcAsync(hedefOturum.Id, hedefOturum.AktifTurNo + 1, SayimTuruTip.ErpKarsilastirma, kullaniciId, ct);
+                erpTur.Notlar = "Plan geneli ERP karşılaştırması (tüm bölgelerin toplam sayımı ↔ plan depolarındaki ERP stoğu).";
+                hedefOturum.AktifTurNo++;
 
-                var erpTur = await YeniTurAcAsync(oturum.Id, oturum.AktifTurNo + 1, SayimTuruTip.ErpKarsilastirma, kullaniciId, ct);
-                oturum.AktifTurNo++;
-
-                // ERP karşılaştırma sonucunu hesapla
-                await HesaplaErpKarsilastirmaAsync(erpTur, sonSonuc, erpStoklar, oturum, kullaniciId, ct);
+                await HesaplaErpKarsilastirmaAsync(erpTur, fiiliDetaylar, erpStoklar, hedefOturum, kullaniciId, ct);
             }
 
             plan.Durum = SayimPlaniDurum.ErpKarsilastirmaAktif;
@@ -495,23 +517,33 @@ public class SayimOturumuService : ISayimOturumuService
         await _uow.SaveChangesAsync(ct);
     }
 
-    private async Task HesaplaErpKarsilastirmaAsync(SayimTuru tur, TurSonucu fiiliSonuc,
+    private async Task HesaplaErpKarsilastirmaAsync(SayimTuru tur, IEnumerable<TurSonucuDetay> fiiliDetaylar,
         IEnumerable<ErpStok> erpStoklar, SayimOturumu oturum, string kullaniciId, CancellationToken ct)
     {
-        var onaylananlar = fiiliSonuc.Detaylar.Where(d => d.OnaylananDeger.HasValue).ToList();
+        // ERP karşılaştırması PLAN GENELİNDE ve sadece MALZEME KODU bazında yapılır (lot / seri no dikkate alınmaz).
+        // Fiili: tüm bölgelerin onaylanmış sayım miktarlarının malzeme kodu bazında toplamı.
+        // ERP  : plan depo kodlarındaki ERP stoğunun malzeme kodu bazında toplamı (çağıran tarafından filtrelenmiş gelir).
+        var fiiliToplamlar = fiiliDetaylar
+            .GroupBy(d => d.MalzemeKodu.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Sum(d => d.OnaylananDeger!.Value), StringComparer.OrdinalIgnoreCase);
+
+        var erpToplamlar = erpStoklar
+            .GroupBy(e => e.MalzemeKodu.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Sum(e => e.Miktar), StringComparer.OrdinalIgnoreCase);
+
+        // Sayımda olup ERP'de olmayanlar ile ERP'de olup hiç sayılmayanlar da karşılaştırmaya dahildir.
+        var tumKodlar = fiiliToplamlar.Keys
+            .Union(erpToplamlar.Keys, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
         var sonucDetaylar = new List<TurSonucuDetay>();
         var farkVar = false;
 
-        foreach (var fiiliDetay in onaylananlar)
+        foreach (var malzemeKodu in tumKodlar)
         {
-            // ERP'de aynı malzeme kodu + lot no kombinasyonu birden fazla depoda olabilir.
-            // Bölge veya depo koduna bakmaksızın sadece malzeme kodu + lot no bazında toplam alıyoruz.
-            var erpMiktar = erpStoklar
-                .Where(e =>
-                    e.MalzemeKodu == fiiliDetay.MalzemeKodu &&
-                    (e.LotNo == fiiliDetay.LotNo || (string.IsNullOrEmpty(e.LotNo) && string.IsNullOrEmpty(fiiliDetay.LotNo))))
-                .Sum(e => e.Miktar);
-            var fiiliMiktar = fiiliDetay.OnaylananDeger!.Value;
+            fiiliToplamlar.TryGetValue(malzemeKodu, out var fiiliMiktar);
+            erpToplamlar.TryGetValue(malzemeKodu, out var erpMiktar);
             var fark = fiiliMiktar - erpMiktar;
 
             var durum = fark == 0 ? TurSonucuDetayDurum.Eslesti : TurSonucuDetayDurum.FarkVar;
@@ -519,11 +551,11 @@ public class SayimOturumuService : ISayimOturumuService
 
             sonucDetaylar.Add(new TurSonucuDetay
             {
-                MalzemeKodu = fiiliDetay.MalzemeKodu,
-                LotNo = fiiliDetay.LotNo,
-                SeriNo = fiiliDetay.SeriNo,
-                Deger1 = erpMiktar,
-                Deger2 = fiiliMiktar,
+                MalzemeKodu = malzemeKodu,
+                LotNo = null,
+                SeriNo = null,
+                Deger1 = erpMiktar,      // ERP
+                Deger2 = fiiliMiktar,    // Fiili sayım (tüm bölgeler toplamı)
                 Fark = fark,
                 FarkYuzdesi = erpMiktar != 0 ? Math.Abs(fark / erpMiktar * 100) : null,
                 Durum = durum,
@@ -546,19 +578,8 @@ public class SayimOturumuService : ISayimOturumuService
 
         tur.Durum = farkVar ? SayimTuruDurum.FarkVar : SayimTuruDurum.Onaylandi;
 
-        if (farkVar)
-        {
-            var bildirim = new GorevBildirimi
-            {
-                SayimOturumuId = oturum.Id,
-                SayimTuruId = tur.Id,
-                BildirimTipi = GorevBildirimTipi.ErpKontrolGerekli,
-                Durum = GorevBildirimDurum.Beklemede,
-                Mesaj = $"ERP karşılaştırma: {sonucDetaylar.Count(d => d.Durum == TurSonucuDetayDurum.FarkVar)} malzemede fark tespit edildi.",
-                OlusturanKullaniciId = kullaniciId
-            };
-            await _uow.GorevBildirimleri.AddAsync(bildirim, ct);
-        }
+        // ERP karşılaştırma plan geneli yapıldığı için bölge bazında "Bekleyen İş" (görev bildirimi) OLUŞTURULMAZ.
+        // Fark olan malzemelere Raporlar sayfasından kontrol ekibi atanır (ERP Kontrol Sayımı).
     }
 
     private static SayimOturumuDetayDto MapToDto(SayimOturumu oturum) => new(

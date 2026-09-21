@@ -80,9 +80,9 @@ public interface ISayimKaydiService
     Task<IEnumerable<AcikSayimKaydiDto>> GetAcikKayitlarByPlanIdAsync(int planId, CancellationToken ct = default);
     Task<OfflineImportSonucDto> OfflineImportAsync(int katilimciId, Stream dosya, string dosyaAdi, string kullaniciId, bool tamamla = false, CancellationToken ct = default);
     Task<SayimKaydiDto> AcAsync(int turId, int ekipId, string kullaniciId, CancellationToken ct = default);
-    Task DetayEkleAsync(int kaydiId, SayimKaydiDetayEkleDto request, CancellationToken ct = default);
-    Task<TopluDetayEkleSonucDto> TopluDetayEkleAsync(int kaydiId, IEnumerable<SayimKaydiDetayEkleDto> detaylar, CancellationToken ct = default);
-    Task DetayGuncelleAsync(int detayId, SayimKaydiDetayEkleDto request, CancellationToken ct = default);
+    Task DetayEkleAsync(int kaydiId, SayimKaydiDetayEkleDto request, string kullaniciId, CancellationToken ct = default);
+    Task<TopluDetayEkleSonucDto> TopluDetayEkleAsync(int kaydiId, IEnumerable<SayimKaydiDetayEkleDto> detaylar, string kullaniciId, CancellationToken ct = default);
+    Task DetayGuncelleAsync(int detayId, SayimKaydiDetayEkleDto request, string kullaniciId, CancellationToken ct = default);
     Task DetaySilAsync(int detayId, CancellationToken ct = default);
     Task TamamlaAsync(int kaydiId, string kullaniciId, CancellationToken ct = default);
 }
@@ -109,6 +109,7 @@ public interface IErpKontrolService
     Task MalzemeSayimGuncelleAsync(int malzemeId, ErpKontrolMalzemeSayimDto request, CancellationToken ct = default);
     Task EkipTamamlaAsync(int erpKontrolEkipId, string kullaniciId, CancellationToken ct = default);
     Task PlaniKapatAsync(int planId, string kullaniciId, CancellationToken ct = default);
+    Task ManuelKararVerAsync(int planId, ErpKontrolManuelKararDto request, string kullaniciId, CancellationToken ct = default);
     Task<IEnumerable<ErpKontrolSonucDto>> GetSonuclarAsync(int planId, CancellationToken ct = default);
     Task<ErpKontrolImportSonucDto> ImportSayimAsync(int erpKontrolEkipId, Stream dosya, string dosyaAdi, CancellationToken ct = default);
     Task TerminalSayimGuncelleAsync(int planId, int ekipId, IEnumerable<ErpKontrolMalzemeSayimDto> kayitlar, CancellationToken ct = default);

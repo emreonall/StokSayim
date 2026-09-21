@@ -136,7 +136,7 @@ else
                         @{
                             var d = (TurSonucuDetayRow)context;
                         }
-                        @if (d.Durum == "FarkVar" && !d.OnaylananDeger.HasValue)
+                        @if (d.Durum == "FarkVar" && !d.OnaylananDeger.HasValue && _turSonucu?.TurTipi != "ErpKarsilastirma")
                         {
                             <SfButton CssClass="e-small e-outline" style="color:var(--warn)"
                                       @onclick="@(() => ManuelKararAc(d))">
@@ -246,8 +246,9 @@ else
                 // Tur tipine göre kolon başlıkları
                 if (sonuc.TurTipi == "ErpKarsilastirma")
                 {
-                    _deger1Baslik = "Fiili Sayım";
-                    _deger2Baslik = "ERP";
+                    _deger1Baslik = "ERP";
+                    _deger2Baslik = "Fiili Sayım";
+                    _deger3Baslik = "ERP Kontrol Sayımı";
                 }
                 else
                 {
@@ -274,7 +275,10 @@ else
     private void ManuelKararAc(TurSonucuDetayRow detay)
     {
         _aktifDetay = detay;
-        _kararDeger = detay.Deger1 ?? detay.Deger2 ?? 0;
+        // ERP karşılaştırmasında Deger1 = ERP, Deger2 = fiili sayım; karar varsayılanı fiili sayım olmalı
+        _kararDeger = _turSonucu?.TurTipi == "ErpKarsilastirma"
+            ? (detay.Deger2 ?? 0)
+            : (detay.Deger1 ?? detay.Deger2 ?? 0);
         _kararGerekce = "";
         _manuelDialogAcik = true;
     }

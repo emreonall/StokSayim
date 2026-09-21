@@ -136,7 +136,18 @@ else
                     @if (_farkRaporu.FarkliSatir > 0)
                     {
                         <div style="font-size:12px; color:var(--muted)">
-                            Fark olan satırlarda ekip atayarak ERP kontrol sayımı başlatabilirsiniz.
+                            @if (_erpKontrolOturumu == null)
+                            {
+                                <text>ERP kontrol sayımı zorunludur: fark olan tüm malzemelere kontrol ekibi atayıp sayımı başlatın.</text>
+                            }
+                            else if (_erpKontrolOturumu.Durum == ErpKontrolOturumuDurum.Tamamlandi)
+                            {
+                                <text>ERP kontrol sayımı tamamlandı. Fark süren malzemeler için "Karar Ver" ile manuel karar girin; tüm farklar karara bağlanmadan plan kapatılamaz.</text>
+                            }
+                            else
+                            {
+                                <text>ERP kontrol sayımı devam ediyor.</text>
+                            }
                         </div>
                     }
                 </div>
@@ -147,10 +158,16 @@ else
                             ERP Kontrol: @_erpKontrolOturumu.Durum
                         </span>
                     }
-                    @if (_malzemeEkipAtamalari.Any(kv => kv.Value > 0))
+                    @if (_erpKontrolOturumu?.Durum == ErpKontrolOturumuDurum.Tamamlandi)
+                    {
+                        <span class="ss-badge @(KararBekleyenSayisi > 0 ? "ss-badge-danger" : "ss-badge-success")">
+                            Karar bekleyen: @KararBekleyenSayisi
+                        </span>
+                    }
+                    else if (_malzemeEkipAtamalari.Any(kv => kv.Value > 0))
                     {
                         <SfButton CssClass="e-primary" @onclick="ErpKontrolKaydet">
-                            ✅ ERP Kontrol Sayımını Başlat (@_malzemeEkipAtamalari.Count(kv => kv.Value > 0) malzeme)
+                            ✅ ERP Kontrol Sayımını Başlat (@_malzemeEkipAtamalari.Count(kv => kv.Value > 0) / @_farkRaporu.FarkliSatir malzeme)
                         </SfButton>
                     }
                 </div>
@@ -258,11 +275,69 @@ else
                             </Template>
                         </GridColumn>
                     }
+                    @if (_erpKontrolOturumu?.Durum == ErpKontrolOturumuDurum.Tamamlandi)
+                    {
+                        <GridColumn HeaderText="İşlem" Width="150" AllowFiltering="false" AllowSorting="false">
+                            <Template>
+                                @{
+                                    var f = (FarkDetayDto)context;
+                                }
+                                @if (f.Fark != 0 || f.KararTipi == KararTipi.Manuel)
+                                {
+                                    <SfButton CssClass="e-small e-outline" @onclick="@(() => ManuelKararAc(f))">
+                                        ⚖️ @(f.KararTipi == KararTipi.Manuel ? "Karar Düzenle" : "Karar Ver")
+                                    </SfButton>
+                                }
+                            </Template>
+                        </GridColumn>
+                    }
                 </GridColumns>
             </SfGrid>
         </div>
     }
 }
+
+<!-- ERP Kontrol Sonrası Manuel Karar Dialog -->
+<SfDialog @bind-Visible="_kararDialogAcik" Header="ERP Kontrol Sonrası Manuel Karar" Width="440px" ShowCloseIcon="true">
+    <DialogTemplates>
+        <Content>
+            @if (_kararSatiri != null)
+            {
+                <div class="ss-alert ss-alert-info" style="margin-bottom:16px">
+                    <strong>@_kararSatiri.MalzemeKodu</strong> — @_kararSatiri.MalzemeAdi
+                </div>
+                <div style="display:flex; gap:16px; margin-bottom:16px">
+                    <div style="flex:1; text-align:center; padding:12px; background:var(--bg); border-radius:8px">
+                        <div style="font-size:11px; color:var(--muted)">ERP Stok</div>
+                        <div style="font-size:20px; font-weight:700">@_kararSatiri.ErpMiktar.ToString("N2")</div>
+                    </div>
+                    <div style="flex:1; text-align:center; padding:12px; background:var(--bg); border-radius:8px">
+                        <div style="font-size:11px; color:var(--muted)">Kontrol Sayımı</div>
+                        <div style="font-size:20px; font-weight:700">@_kararSatiri.FiiliMiktar.ToString("N2")</div>
+                    </div>
+                </div>
+                <div class="ss-form-group">
+                    <label>Kesin Değer *</label>
+                    <SfNumericTextBox @bind-Value="_kararDeger" Format="N2" />
+                </div>
+                <div class="ss-form-group">
+                    <label>Gerekçe *</label>
+                    <SfTextBox @bind-Value="_kararGerekce" Multiline="true" Placeholder="Kararınızın gerekçesini yazın..." />
+                </div>
+                @if (!string.IsNullOrEmpty(_kararHata))
+                {
+                    <div class="ss-alert ss-alert-danger">@_kararHata</div>
+                }
+            }
+        </Content>
+        <FooterTemplate>
+            <SfButton CssClass="e-outline" @onclick="@(() => _kararDialogAcik = false)">İptal</SfButton>
+            <SfButton CssClass="e-primary" Disabled="@_kararYukleniyor" @onclick="ManuelKararKaydet">
+                @(_kararYukleniyor ? "Kaydediliyor..." : "✓ Kaydet")
+            </SfButton>
+        </FooterTemplate>
+    </DialogTemplates>
+</SfDialog>
 
 @if (!string.IsNullOrEmpty(_mesaj))
 {
@@ -284,6 +359,17 @@ else
     private string _mesaj = "";
     private bool _hata = false;
 
+    // ERP kontrol sonrası manuel karar
+    private bool _kararDialogAcik;
+    private FarkDetayDto? _kararSatiri;
+    private decimal _kararDeger;
+    private string _kararGerekce = "";
+    private string _kararHata = "";
+    private bool _kararYukleniyor;
+
+    private int KararBekleyenSayisi =>
+        _farkRaporu?.FarkDetaylari.Count(f => f.Fark != 0 && f.KararTipi != KararTipi.Manuel) ?? 0;
+
     protected override async Task OnInitializedAsync()
     {
         _planlar = await PlanService.GetAllAsync();
@@ -300,10 +386,10 @@ else
         _raporYukleniyor = true;
         try
         {
+            _tumEkipler = await EkipService.GetAllAsync();
             _durumRaporu = await RaporService.GetDurumRaporuAsync(_secilenPlanId);
             _farkRaporu = await RaporService.GetKesinFarkRaporuAsync(_secilenPlanId);
             _erpKontrolOturumu = await ErpKontrolService.GetOturumuAsync(_secilenPlanId);
-            _tumEkipler = await EkipService.GetAllAsync();
 
             // Mevcut atamalar varsa grid'e yansıt
             _malzemeEkipAtamalari = new();
@@ -354,7 +440,36 @@ else
             _erpKontrolOturumu = await ErpKontrolService.BaslatAsync(_secilenPlanId, request);
             _mesaj = $"ERP kontrol sayımı başlatıldı. {ekipAtamalari.Sum(e => e.MalzemeKodlari.Count())} malzeme atandı.";
             _hata = false;
+            await YukleRaporlar();
         }
         catch (Exception ex) { _mesaj = ex.Message; _hata = true; }
+    }
+
+    private void ManuelKararAc(FarkDetayDto f)
+    {
+        _kararSatiri = f;
+        _kararDeger = f.FiiliMiktar;
+        _kararGerekce = f.ManuelKararGerekce ?? "";
+        _kararHata = "";
+        _kararDialogAcik = true;
+    }
+
+    private async Task ManuelKararKaydet()
+    {
+        if (_kararSatiri == null) return;
+        if (string.IsNullOrWhiteSpace(_kararGerekce)) { _kararHata = "Gerekçe zorunludur."; return; }
+
+        _kararYukleniyor = true;
+        _kararHata = "";
+        try
+        {
+            var dto = new ErpKontrolManuelKararDto(_kararSatiri.MalzemeKodu, _kararDeger, _kararGerekce);
+            await ErpKontrolService.ManuelKararVerAsync(_secilenPlanId, dto);
+            _kararDialogAcik = false;
+            _mesaj = $"'{_kararSatiri.MalzemeKodu}' için karar kaydedildi."; _hata = false;
+            await YukleRaporlar();
+        }
+        catch (Exception ex) { _kararHata = ex.Message; }
+        finally { _kararYukleniyor = false; }
     }
 }

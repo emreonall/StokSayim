@@ -77,3 +77,9 @@ public record ErpKontrolImportSonucDto(
     int HataliSatir,
     IEnumerable<string> Hatalar
 );
+
+public record ErpKontrolManuelKararDto(
+    string MalzemeKodu,
+    decimal KararVerilenDeger,
+    string Gerekce
+);

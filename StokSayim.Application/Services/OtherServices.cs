@@ -211,7 +211,7 @@ public class SayimKaydiService : ISayimKaydiService
         return MapToDto(kaydi, new Dictionary<string, Malzeme>());
     }
 
-    public async Task DetayEkleAsync(int kaydiId, SayimKaydiDetayEkleDto request, CancellationToken ct = default)
+    public async Task DetayEkleAsync(int kaydiId, SayimKaydiDetayEkleDto request, string kullaniciId, CancellationToken ct = default)
     {
         var kaydi = await _uow.SayimKayitlari.GetByIdAsync(kaydiId, ct)
             ?? throw new KeyNotFoundException($"Sayım kaydı bulunamadı: {kaydiId}");
@@ -226,7 +226,8 @@ public class SayimKaydiService : ISayimKaydiService
             LotNo = request.LotNo,
             SeriNo = request.SeriNo,
             SayilanMiktar = request.SayilanMiktar,
-            Notlar = request.Notlar
+            Notlar = request.Notlar,
+            OlusturanKullaniciId = kullaniciId
         };
 
         // GetByIdAsync Detaylar navigation property'sini include etmediği için
@@ -235,7 +236,7 @@ public class SayimKaydiService : ISayimKaydiService
         await _uow.SaveChangesAsync(ct);
     }
 
-    public async Task<TopluDetayEkleSonucDto> TopluDetayEkleAsync(int kaydiId, IEnumerable<SayimKaydiDetayEkleDto> detaylar, CancellationToken ct = default)
+    public async Task<TopluDetayEkleSonucDto> TopluDetayEkleAsync(int kaydiId, IEnumerable<SayimKaydiDetayEkleDto> detaylar, string kullaniciId, CancellationToken ct = default)
     {
         var kaydi = await _uow.SayimKayitlari.GetByIdAsync(kaydiId, ct)
             ?? throw new KeyNotFoundException($"Sayım kaydı bulunamadı: {kaydiId}");
@@ -267,7 +268,8 @@ public class SayimKaydiService : ISayimKaydiService
                 LotNo = string.IsNullOrWhiteSpace(dto.LotNo) ? null : dto.LotNo.Trim(),
                 SeriNo = string.IsNullOrWhiteSpace(dto.SeriNo) ? null : dto.SeriNo.Trim(),
                 SayilanMiktar = dto.SayilanMiktar,
-                Notlar = dto.Notlar
+                Notlar = dto.Notlar,
+                OlusturanKullaniciId = kullaniciId
             });
         }
 
@@ -285,7 +287,7 @@ public class SayimKaydiService : ISayimKaydiService
         );
     }
 
-    public async Task DetayGuncelleAsync(int detayId, SayimKaydiDetayEkleDto request, CancellationToken ct = default)
+    public async Task DetayGuncelleAsync(int detayId, SayimKaydiDetayEkleDto request, string kullaniciId, CancellationToken ct = default)
     {
         var detay = await _uow.SayimKayitlari.Query()
             .SelectMany(k => k.Detaylar)
@@ -298,6 +300,7 @@ public class SayimKaydiService : ISayimKaydiService
         detay.SayilanMiktar = request.SayilanMiktar;
         detay.Notlar = request.Notlar;
         detay.GuncellemeTarihi = DateTime.UtcNow;
+        detay.GuncelleyenKullaniciId = kullaniciId;
         await _uow.SaveChangesAsync(ct);
     }
 
@@ -494,7 +497,7 @@ public class SayimKaydiService : ISayimKaydiService
 
         if (eklenecekler.Any())
         {
-            var sonuc = await TopluDetayEkleAsync(kaydiId, eklenecekler, ct);
+            var sonuc = await TopluDetayEkleAsync(kaydiId, eklenecekler, kullaniciId, ct);
 
             var karsilastirmaTetiklendi = false;
             if (tamamla)
@@ -667,6 +670,9 @@ public class RaporService : IRaporService
         var oturumlar = await _uow.SayimOturumlari.GetByPlanIdAsync(planId, ct);
         var oturumList = oturumlar.ToList();
 
+        // ERP karşılaştırması plan geneli tek turdur; bu yüzden tüm bölgeler için ortak işaretlenir
+        var erpKarsilastirmaYapildi = oturumList.Any(o => o.SayimTurlari.Any(t => t.TurTipi == SayimTuruTip.ErpKarsilastirma));
+
         var bolgeDurumlari = plan.Bolgeler.Select(b =>
         {
             var oturum = oturumList.FirstOrDefault(o => o.BolgeId == b.Id);
@@ -677,7 +683,7 @@ public class RaporService : IRaporService
                 OturumDurum: oturum?.Durum.ToString() ?? "Başlamadı",
                 TamamlananTurSayisi: oturum?.SayimTurlari.Count(t => t.Durum == SayimTuruDurum.Onaylandi) ?? 0,
                 ToplamTurSayisi: oturum?.SayimTurlari.Count ?? 0,
-                ErpKarsilastirmaYapildiMi: oturum?.SayimTurlari.Any(t => t.TurTipi == SayimTuruTip.ErpKarsilastirma) ?? false
+                ErpKarsilastirmaYapildiMi: erpKarsilastirmaYapildi
             );
         }).ToList();
 
@@ -700,11 +706,14 @@ public class RaporService : IRaporService
             ?? throw new KeyNotFoundException($"Plan bulunamadı: {planId}");
 
         var oturumlar = (await _uow.SayimOturumlari.GetByPlanIdAsync(planId, ct)).ToList();
-        var erpStoklar = (await _uow.ErpStoklar.GetByPlanIdAsync(planId, ct)).ToList();
+        // ERP miktarı: sadece plan depo kodlarındaki (SayimPlanDepoKodlari) stoklar
+        var erpStoklar = (await _uow.ErpStoklar.GetByPlanIdAsync(planId, ct)).SadecePlanDepolari(plan.DepoKodlari);
 
         // --- SAYIM SONUÇLARINI topla: sadece malzeme kodu bazında ---
         // key: MalzemeKodu → (FiiliMiktar, BolgeAdi, KararTipi, Gerekce)
         var sayimSonuclari = new Dictionary<string, (decimal Miktar, string BolgeAdi, KararTipi? Karar, string? Gerekce)>();
+        // ERP kontrol sayımı sonrası verilen manuel kararlar (en yüksek öncelik)
+        var manuelKararlar = new Dictionary<string, (decimal Deger, string? Gerekce)>();
 
         foreach (var oturum in oturumlar)
         {
@@ -718,6 +727,8 @@ public class RaporService : IRaporService
             foreach (var detay in erpTuru.TurSonucu.Detaylar)
             {
                 var fiili = detay.Deger2 ?? 0;
+                if (detay.KararTipi == Domain.Enums.KararTipi.Manuel && detay.OnaylananDeger.HasValue)
+                    manuelKararlar[detay.MalzemeKodu] = (detay.OnaylananDeger.Value, detay.ManuelKarar?.Gerekce);
                 if (sayimSonuclari.TryGetValue(detay.MalzemeKodu, out var mevcut))
                     sayimSonuclari[detay.MalzemeKodu] = (mevcut.Miktar + fiili, mevcut.BolgeAdi, detay.KararTipi, detay.ManuelKarar?.Gerekce);
                 else
@@ -743,6 +754,10 @@ public class RaporService : IRaporService
                 sayimSonuclari[kvp.Key] = (kvp.Value, "ERP Kontrol", null, null);
             }
         }
+
+        // --- MANUEL KARAR (ERP kontrol sayımı sonrası) kontrol sayımının da üzerine yazar ---
+        foreach (var kvp in manuelKararlar)
+            sayimSonuclari[kvp.Key] = (kvp.Value.Deger, "ERP Kontrol", Domain.Enums.KararTipi.Manuel, kvp.Value.Gerekce);
 
         // --- ERP STOKLARI topla: sadece malzeme kodu bazında ---
         // key: MalzemeKodu → ToplamMiktar

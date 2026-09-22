@@ -31,9 +31,23 @@ public class BolgeService : IBolgeService
             Aciklama: b.Aciklama,
             EkipGrubuVarMi: b.EkipGrubu != null,
             SayimOturumuVarMi: b.SayimOturumu != null,
-            OturumDurum: b.SayimOturumu?.Durum.ToString()
+            OturumDurum: b.SayimOturumu?.Durum.ToString(),
+            AktifTurNo: b.SayimOturumu?.AktifTurNo,
+            AktifTurTipiAdi: b.SayimOturumu?.SayimTurlari
+                .Where(t => t.TurNo == b.SayimOturumu.AktifTurNo)
+                .Select(t => TurTipiAdi(t.TurTipi))
+                .FirstOrDefault()
         ));
     }
+
+    private static string TurTipiAdi(SayimTuruTip tip) => tip switch
+    {
+        SayimTuruTip.EkipKarsilastirma => "Ekip Karşılaştırma",
+        SayimTuruTip.EkipKontrol => "Kontrol Sayımı",
+        SayimTuruTip.ErpKarsilastirma => "ERP Karşılaştırma",
+        SayimTuruTip.ErpKontrol => "ERP Kontrol",
+        _ => tip.ToString()
+    };
 
     public async Task<BolgeDetayDto?> GetByIdAsync(int id, CancellationToken ct = default)
     {
@@ -87,7 +101,7 @@ public class BolgeService : IBolgeService
         await _uow.Bolgeler.AddAsync(bolge, ct);
         await _uow.SaveChangesAsync(ct);
 
-        return new BolgeDto(bolge.Id, bolge.SayimPlaniId, bolge.BolgeKodu, bolge.BolgeAdi, bolge.Aciklama, false, false, null);
+        return new BolgeDto(bolge.Id, bolge.SayimPlaniId, bolge.BolgeKodu, bolge.BolgeAdi, bolge.Aciklama, false, false, null, null, null);
     }
 
     public async Task UpdateAsync(int id, BolgeOlusturDto request, CancellationToken ct = default)

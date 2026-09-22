@@ -10,7 +10,9 @@ public record BolgeDto(
     string? Aciklama,
     bool EkipGrubuVarMi,
     bool SayimOturumuVarMi,
-    string? OturumDurum
+    string? OturumDurum,
+    int? AktifTurNo,
+    string? AktifTurTipiAdi
 );
 
 public record BolgeDetayDto(
